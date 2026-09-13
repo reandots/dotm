@@ -20,12 +20,14 @@ type cli struct {
 	Apps    appsCmd    `cmd:"" help:"List catalog applications, logical dependencies and packages"`
 	Show    showCmd    `cmd:"" help:"Show the local selection and its resolved applications/packages"`
 	Status  statusCmd  `cmd:"" help:"Compare desired applications with the installed Nix profile"`
+	Install installCmd `cmd:"" help:"Install missing applications without updating or removing installed entries"`
 }
 
 type configsCmd struct{}
 type appsCmd struct{}
 type showCmd struct{}
 type statusCmd struct{}
+type installCmd struct{}
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -82,7 +84,7 @@ func run(args []string, out, stderr io.Writer) error {
 			}
 			fmt.Fprintf(out, "%s\n  dependencies: %s\n  nix: %s\n", id, list(app.Dependencies), list(packages))
 		}
-	case "show", "status":
+	case "show", "status", "install":
 		path, err := manifest.SelectionPath()
 		if err != nil {
 			return err
@@ -93,6 +95,13 @@ func run(args []string, out, stderr io.Writer) error {
 		}
 		resolved, err := data.Resolve(config.Apps)
 		if err != nil {
+			return err
+		}
+		if ctx.Command() == "install" {
+			report, err := installed.Install(context.Background(), resolved, stderr)
+			if report.Profile != "" {
+				printStatus(out, config.Name, path, config.Apps, report)
+			}
 			return err
 		}
 		if ctx.Command() == "status" {
