@@ -15,12 +15,13 @@ import (
 )
 
 type cli struct {
-	DataDir string     `help:"directory containing catalog.toml and configurations.toml" default:"."`
-	Configs configsCmd `cmd:"" help:"List available configurations and their selected applications"`
-	Apps    appsCmd    `cmd:"" help:"List catalog applications, logical dependencies and packages"`
-	Show    showCmd    `cmd:"" help:"Show the local selection and its resolved applications/packages"`
-	Status  statusCmd  `cmd:"" help:"Compare desired applications with the installed Nix profile"`
-	Install installCmd `cmd:"" help:"Install missing applications without updating or removing installed entries"`
+	DataDir      string          `help:"directory containing catalog.toml and configurations.toml" default:"."`
+	Configs      configsCmd      `cmd:"" help:"List available configurations and their selected applications"`
+	Apps         appsCmd         `cmd:"" help:"List catalog applications, logical dependencies and packages"`
+	Show         showCmd         `cmd:"" help:"Show the local selection and its resolved applications/packages"`
+	Status       statusCmd       `cmd:"" help:"Compare desired applications with the installed Nix profile"`
+	Install      installCmd      `cmd:"" help:"Install missing applications without updating or removing installed entries"`
+	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
 }
 
 type configsCmd struct{}
@@ -28,6 +29,9 @@ type appsCmd struct{}
 type showCmd struct{}
 type statusCmd struct{}
 type installCmd struct{}
+type removeExtrasCmd struct {
+	Yes bool `help:"Approve all extra applications and native entries without prompting"`
+}
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -84,7 +88,7 @@ func run(args []string, out, stderr io.Writer) error {
 			}
 			fmt.Fprintf(out, "%s\n  dependencies: %s\n  nix: %s\n", id, list(app.Dependencies), list(packages))
 		}
-	case "show", "status", "install":
+	case "show", "status", "install", "remove-extras":
 		path, err := manifest.SelectionPath()
 		if err != nil {
 			return err
@@ -99,6 +103,13 @@ func run(args []string, out, stderr io.Writer) error {
 		}
 		if ctx.Command() == "install" {
 			report, err := installed.Install(context.Background(), resolved, stderr)
+			if report.Profile != "" {
+				printStatus(out, config.Name, path, config.Apps, report)
+			}
+			return err
+		}
+		if ctx.Command() == "remove-extras" {
+			report, err := installed.RemoveExtras(context.Background(), data, resolved, app.RemoveExtras.Yes, os.Stdin, stderr)
 			if report.Profile != "" {
 				printStatus(out, config.Name, path, config.Apps, report)
 			}
