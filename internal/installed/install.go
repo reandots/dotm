@@ -37,22 +37,7 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 	}
 	operationErr := prepareSource(ctx, source, system, retained, allowInit, stderr)
 	if operationErr == nil {
-		operationErr = os.MkdirAll(filepath.Dir(before.Profile), 0700)
-	}
-	if operationErr == nil {
-		args := []string{"profile", "add", "--profile", before.Profile, "--no-update-lock-file"}
-		for _, p := range missing {
-			ref := "path:" + source + "#packages." + system + "." + managedAttribute(p)
-			if len(p.Outputs) > 0 {
-				ref += "^" + strings.Join(p.Outputs, ",")
-			}
-			args = append(args, ref)
-		}
-		cmd := exec.CommandContext(ctx, "nix", args...)
-		cmd.Stdout, cmd.Stderr = stderr, stderr
-		if err := cmd.Run(); err != nil {
-			operationErr = fmt.Errorf("nix profile add --profile %s: %w", before.Profile, err)
-		}
+		operationErr = addPackages(ctx, before.Profile, source, system, missing, stderr)
 	}
 	after, inspectErr := Inspect(ctx, desired)
 	if inspectErr != nil {
@@ -105,4 +90,27 @@ func installationPlan(before Report, desired manifest.Resolved, source string) (
 	}
 	sort.Slice(retained, func(i, j int) bool { return retained[i].Key() < retained[j].Key() })
 	return missing, retained, allowInit, nil
+}
+
+func addPackages(ctx context.Context, profile, source, system string, packages []manifest.Package, stderr io.Writer) error {
+	if len(packages) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(profile), 0700); err != nil {
+		return err
+	}
+	args := []string{"profile", "add", "--profile", profile, "--no-update-lock-file"}
+	for _, p := range packages {
+		ref := "path:" + source + "#packages." + system + "." + managedAttribute(p)
+		if len(p.Outputs) > 0 {
+			ref += "^" + strings.Join(p.Outputs, ",")
+		}
+		args = append(args, ref)
+	}
+	cmd := exec.CommandContext(ctx, "nix", args...)
+	cmd.Stdout, cmd.Stderr = stderr, stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("nix profile add --profile %s: %w", profile, err)
+	}
+	return nil
 }
