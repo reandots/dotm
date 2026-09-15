@@ -15,17 +15,18 @@ import (
 	"dotm/internal/manifest"
 )
 
-// Update advances the machine-local source, upgrades installed desired entries,
-// and adds missing descriptors. Extras are never selected for upgrade or removal.
-// Source advancement and the two profile batches are separate commits. A failure
-// returns freshly inspected state, not an assumed rollback.
+// Update advances the source and completes installed desired applications,
+// including their current dependencies. Wholly absent independent applications
+// and extras are left alone. Source advancement and the two profile batches are
+// separate commits; failure returns freshly inspected state, not a rollback.
 func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
 	before, err := Inspect(ctx, desired)
 	if err != nil {
 		return Report{}, err
 	}
-	if len(desired.Packages) == 0 {
-		fmt.Fprintln(stderr, "Update: no desired packages; source and profile unchanged.")
+	selected := updateSelection(before, desired)
+	if len(selected.Packages) == 0 {
+		fmt.Fprintln(stderr, "Update: no installed desired applications; source and profile unchanged.")
 		return before, nil
 	}
 	base, err := stateHome()
@@ -33,11 +34,11 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 		return before, err
 	}
 	source := filepath.Join(base, "dotm", "source")
-	missing, retained, allowInit, err := installationPlan(before, desired, source)
+	missing, retained, allowInit, err := installationPlan(before, selected, source)
 	if err != nil {
 		return before, err
 	}
-	names, err := updateTargets(before, desired, source)
+	names, err := updateTargets(before, selected, source)
 	if err != nil {
 		return before, err
 	}
@@ -103,7 +104,8 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	if operationErr != nil {
 		return after, fmt.Errorf("update failed; source/profile changes were not rolled back: %w", operationErr)
 	}
-	for _, app := range after.Applications {
+	updated := classify(Report{Entries: after.Entries}, selected)
+	for _, app := range updated.Applications {
 		if app.State != "installed" {
 			return after, fmt.Errorf("update finished but application %q is %s; inspect the profile before retrying", app.ID, app.State)
 		}
@@ -112,6 +114,41 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 		return after, fmt.Errorf("extras changed during update; inspect the profile before retrying")
 	}
 	return after, nil
+}
+
+// Applications are dependency-first, so a reverse pass propagates selection
+// through the complete dependency closure without selecting reverse dependents.
+func updateSelection(before Report, desired manifest.Resolved) manifest.Resolved {
+	included := make(map[string]bool, len(before.Applications))
+	for _, app := range before.Applications {
+		if app.State != "missing" {
+			included[app.ID] = true
+		}
+	}
+	for i := len(desired.Applications) - 1; i >= 0; i-- {
+		app := desired.Applications[i]
+		if included[app.ID] {
+			for _, dep := range app.Dependencies {
+				included[dep] = true
+			}
+		}
+	}
+	var selected manifest.Resolved
+	wanted := make(map[string]bool)
+	for _, app := range desired.Applications {
+		if included[app.ID] {
+			selected.Applications = append(selected.Applications, app)
+			for _, p := range app.Packages {
+				wanted[p.Key()] = true
+			}
+		}
+	}
+	for _, p := range desired.Packages {
+		if wanted[p.Key()] {
+			selected.Packages = append(selected.Packages, p)
+		}
+	}
+	return selected
 }
 
 func updateTargets(before Report, desired manifest.Resolved, source string) ([]string, error) {

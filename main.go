@@ -15,13 +15,19 @@ import (
 )
 
 type cli struct {
-	DataDir      string          `help:"directory containing catalog.toml and configurations.toml" default:"."`
+	DataDir         string `help:"directory containing catalog.toml and configurations.toml" default:"."`
+	InstallMissing  bool   `name:"install" short:"i" help:"Install missing desired applications without updating installed entries"`
+	UpdateInstalled bool   `name:"update" short:"u" help:"Update installed desired applications and complete their dependencies"`
+	RemoveExtra     bool   `name:"remove-extras" short:"r" help:"Remove extras with individual confirmation after update/install"`
+	Yes             bool   `help:"Approve all removals without prompting; requires -r or remove-extras"`
+	// Kong requires a terminal command; this hidden default enables flag-only invocations.
+	Operations   struct{}        `cmd:"" default:"1" hidden:""`
 	Configs      configsCmd      `cmd:"" help:"List available configurations and their selected applications"`
 	Apps         appsCmd         `cmd:"" help:"List catalog applications, logical dependencies and packages"`
 	Show         showCmd         `cmd:"" help:"Show the local selection and its resolved applications/packages"`
 	Status       statusCmd       `cmd:"" help:"Compare desired applications with the installed Nix profile"`
 	Install      installCmd      `cmd:"" help:"Install missing applications without updating or removing installed entries"`
-	Update       updateCmd       `cmd:"" help:"Advance nixpkgs, update desired packages and install missing ones; preserve extras"`
+	Update       updateCmd       `cmd:"" help:"Update installed desired applications and complete their dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
 }
 
@@ -31,21 +37,19 @@ type showCmd struct{}
 type statusCmd struct{}
 type installCmd struct{}
 type updateCmd struct{}
-type removeExtrasCmd struct {
-	Yes bool `help:"Approve all extra applications and native entries without prompting"`
-}
+type removeExtrasCmd struct{}
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "dotm:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, out, stderr io.Writer) error {
+func run(args []string, in io.Reader, out, stderr io.Writer) error {
 	var app cli
 	helpRequested := false
-	parser, err := kong.New(&app, kong.Name("dotm"), kong.Writers(out, stderr), kong.Exit(func(code int) {
+	parser, err := kong.New(&app, kong.Name("dotm"), kong.Description("Use a command or combine -i, -u, and -r. Operations always run in update, install, remove-extras order; stop on the first error without rollback."), kong.Writers(out, stderr), kong.Exit(func(code int) {
 		if code == 0 {
 			helpRequested = true
 		}
@@ -63,15 +67,23 @@ func run(args []string, out, stderr io.Writer) error {
 	if helpRequested {
 		return nil
 	}
-	if ctx.Command() == "" {
-		return fmt.Errorf("expected a command")
+	command := ctx.Command()
+	hasOperations := app.InstallMissing || app.UpdateInstalled || app.RemoveExtra
+	if command == "operations" && !hasOperations {
+		return fmt.Errorf("expected a command or at least one of -i, -u, -r")
+	}
+	if command != "operations" && hasOperations {
+		return fmt.Errorf("operation flags cannot be combined with a subcommand")
+	}
+	if app.Yes && !app.RemoveExtra && command != "remove-extras" {
+		return fmt.Errorf("--yes requires -r or remove-extras")
 	}
 
 	data, err := manifest.Load(app.DataDir)
 	if err != nil {
 		return err
 	}
-	switch ctx.Command() {
+	switch command {
 	case "configs":
 		names := make([]string, 0, len(data.Configs))
 		for name := range data.Configs {
@@ -90,7 +102,7 @@ func run(args []string, out, stderr io.Writer) error {
 			}
 			fmt.Fprintf(out, "%s\n  dependencies: %s\n  nix: %s\n", id, list(app.Dependencies), list(packages))
 		}
-	case "show", "status", "install", "update", "remove-extras":
+	case "show", "status", "install", "update", "remove-extras", "operations":
 		path, err := manifest.SelectionPath()
 		if err != nil {
 			return err
@@ -103,28 +115,14 @@ func run(args []string, out, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if ctx.Command() == "install" {
-			report, err := installed.Install(context.Background(), resolved, stderr)
+		if command != "show" && command != "status" {
+			report, err := app.runOperations(command, data, resolved, in, stderr)
 			if report.Profile != "" {
 				printStatus(out, config.Name, path, config.Apps, report)
 			}
 			return err
 		}
-		if ctx.Command() == "update" {
-			report, err := installed.Update(context.Background(), resolved, stderr)
-			if report.Profile != "" {
-				printStatus(out, config.Name, path, config.Apps, report)
-			}
-			return err
-		}
-		if ctx.Command() == "remove-extras" {
-			report, err := installed.RemoveExtras(context.Background(), data, resolved, app.RemoveExtras.Yes, os.Stdin, stderr)
-			if report.Profile != "" {
-				printStatus(out, config.Name, path, config.Apps, report)
-			}
-			return err
-		}
-		if ctx.Command() == "status" {
+		if command == "status" {
 			report, err := installed.Inspect(context.Background(), resolved)
 			if err != nil {
 				return err
@@ -156,6 +154,38 @@ func run(args []string, out, stderr io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func (app *cli) runOperations(command string, data *manifest.Data, desired manifest.Resolved, in io.Reader, stderr io.Writer) (installed.Report, error) {
+	steps := [...]struct {
+		name      string
+		requested bool
+	}{
+		{"update", app.UpdateInstalled || command == "update"},
+		{"install", app.InstallMissing || command == "install"},
+		{"remove-extras", app.RemoveExtra || command == "remove-extras"},
+	}
+	ctx := context.Background()
+	var report installed.Report
+	for _, step := range steps {
+		if !step.requested {
+			continue
+		}
+		fmt.Fprintf(stderr, "Operation: %s\n", step.name)
+		var err error
+		switch step.name {
+		case "update":
+			report, err = installed.Update(ctx, desired, stderr)
+		case "install":
+			report, err = installed.Install(ctx, desired, stderr)
+		case "remove-extras":
+			report, err = installed.RemoveExtras(ctx, data, desired, app.Yes, in, stderr)
+		}
+		if err != nil {
+			return report, fmt.Errorf("%s: %w", step.name, err)
+		}
+	}
+	return report, nil
 }
 
 func printStatus(out io.Writer, name, path string, selected []string, report installed.Report) {
