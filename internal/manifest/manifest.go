@@ -22,6 +22,8 @@ type Application struct {
 	ID           string
 	Dependencies []string
 	Packages     []Package
+	PreHook      string
+	PostHook     string
 }
 
 type Configuration struct {
@@ -30,8 +32,9 @@ type Configuration struct {
 }
 
 type Data struct {
-	Apps    map[string]Application
-	Configs map[string]Configuration
+	Apps       map[string]Application
+	Configs    map[string]Configuration
+	CatalogDir string
 }
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -50,15 +53,21 @@ func decode(path string, target any) error {
 
 // Load validates the entire catalog and every configuration, including unselected ones.
 func Load(dir string) (*Data, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve catalog directory: %w", err)
+	}
 	var catalog map[string]struct {
 		Dependencies []string `toml:"dependencies"`
 		Nix          []any    `toml:"nix"`
+		PreHook      *string  `toml:"pre_hook"`
+		PostHook     *string  `toml:"post_hook"`
 	}
 	catalogPath := filepath.Join(dir, "catalog.toml")
 	if err := decode(catalogPath, &catalog); err != nil {
 		return nil, err
 	}
-	d := &Data{Apps: make(map[string]Application), Configs: make(map[string]Configuration)}
+	d := &Data{Apps: make(map[string]Application), Configs: make(map[string]Configuration), CatalogDir: dir}
 	ids := make([]string, 0, len(catalog))
 	for id := range catalog {
 		ids = append(ids, id)
@@ -73,6 +82,21 @@ func Load(dir string) (*Data, error) {
 			return nil, fmt.Errorf("%s: application %q needs at least one nix package", catalogPath, id)
 		}
 		app := Application{ID: id, Dependencies: raw.Dependencies, Packages: make([]Package, 0, len(raw.Nix))}
+		for _, hook := range []struct {
+			name   string
+			value  *string
+			target *string
+		}{
+			{"pre_hook", raw.PreHook, &app.PreHook},
+			{"post_hook", raw.PostHook, &app.PostHook},
+		} {
+			if hook.value != nil {
+				if *hook.value == "" {
+					return nil, fmt.Errorf("%s: application %q: %s must be a nonempty file path", catalogPath, id, hook.name)
+				}
+				*hook.target = *hook.value
+			}
+		}
 		packages := make(map[string]bool)
 		for i, value := range raw.Nix {
 			p, err := parsePackage(value)

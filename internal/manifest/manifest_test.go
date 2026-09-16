@@ -88,6 +88,9 @@ func (s *ManifestSuite) TestInvalidManifests() {
 		{"invalid ID", "['bad id']\nnix = ['a']\n", config},
 		{"legacy array catalog", "[[apps]]\nid = 'a'\npackages = [{attr = 'a'}]\n", config},
 		{"legacy packages field", "[a]\npackages = ['a']\n", config},
+		{"empty pre hook", app + "pre_hook = ''\n", config},
+		{"nonstring post hook", app + "post_hook = ['script']\n", config},
+		{"shell command hook table", app + "pre_hook = {command = 'echo hi'}\n", config},
 	}
 	for _, tt := range tests {
 		s.Run(tt.name, func() {

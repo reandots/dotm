@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"dotm/internal/hooks"
 	"dotm/internal/manifest"
 )
 
@@ -28,12 +29,21 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 	}
 	source := filepath.Join(base, "dotm", "source")
 	missing, retained, allowInit, err := installationPlan(before, desired, source)
-	if err != nil || len(missing) == 0 {
-		return before, err
-	}
-	system, err := nixSystem()
 	if err != nil {
 		return before, err
+	}
+	var system string
+	if len(missing) > 0 {
+		system, err = nixSystem()
+		if err != nil {
+			return before, err
+		}
+	}
+	if report, err := runHookPhase(ctx, desired, desired, hooks.Pre, before, stderr); err != nil {
+		return report, err
+	}
+	if len(missing) == 0 {
+		return runHookPhase(ctx, desired, desired, hooks.Post, before, stderr)
 	}
 	operationErr := prepareSource(ctx, source, system, retained, allowInit, stderr)
 	if operationErr == nil {
@@ -51,7 +61,7 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 			return after, fmt.Errorf("install finished but application %q is %s; inspect the profile before retrying", app.ID, app.State)
 		}
 	}
-	return after, nil
+	return runHookPhase(ctx, desired, desired, hooks.Post, after, stderr)
 }
 
 func installationPlan(before Report, desired manifest.Resolved, source string) (missing, retained []manifest.Package, allowInit bool, err error) {

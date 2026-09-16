@@ -10,10 +10,11 @@ type Resolved struct {
 	// Applications are in dependency-first order; root and dependency declaration order is preserved.
 	Applications []Application
 	Packages     []Package
+	CatalogDir   string
 }
 
 func (d *Data) Resolve(roots []string) (Resolved, error) {
-	var result Resolved
+	result := Resolved{CatalogDir: d.CatalogDir}
 	states := make(map[string]uint8)
 	packages := make(map[string]bool)
 	var stack []string

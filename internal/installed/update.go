@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 
+	"dotm/internal/hooks"
 	"dotm/internal/manifest"
 )
 
@@ -50,6 +51,9 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	oldLock, err := os.ReadFile(lockPath)
 	if err != nil && !os.IsNotExist(err) {
 		return before, fmt.Errorf("read source lock before update: %w", err)
+	}
+	if report, err := runHookPhase(ctx, desired, selected, hooks.Pre, before, stderr); err != nil {
+		return report, err
 	}
 
 	_, operationErr := writeSource(source, system, retained, allowInit)
@@ -113,7 +117,7 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	if !reflect.DeepEqual(before.Extras, after.Extras) {
 		return after, fmt.Errorf("extras changed during update; inspect the profile before retrying")
 	}
-	return after, nil
+	return runHookPhase(ctx, desired, selected, hooks.Post, after, stderr)
 }
 
 // Applications are dependency-first, so a reverse pass propagates selection
@@ -133,7 +137,7 @@ func updateSelection(before Report, desired manifest.Resolved) manifest.Resolved
 			}
 		}
 	}
-	var selected manifest.Resolved
+	selected := manifest.Resolved{CatalogDir: desired.CatalogDir}
 	wanted := make(map[string]bool)
 	for _, app := range desired.Applications {
 		if included[app.ID] {
