@@ -18,7 +18,7 @@ type cli struct {
 	InstallMissing  bool   `name:"install" short:"i" help:"Run hooks and install missing desired applications without updating installed entries"`
 	UpdateInstalled bool   `name:"update" short:"u" help:"Run hooks, update installed desired applications and complete their dependencies"`
 	RemoveExtra     bool   `name:"remove-extras" short:"r" help:"Remove extras with individual confirmation after update/install"`
-	Yes             bool   `help:"Approve all removals without prompting; requires -r or remove-extras"`
+	Yes             bool   `help:"Approve removals or cleanup without prompting; requires -r, remove-extras, or clean"`
 	// Kong requires a terminal command; this hidden default enables flag-only invocations.
 	Operations   struct{}        `cmd:"" default:"1" hidden:""`
 	Configs      configsCmd      `cmd:"" help:"List available configurations and their selected applications"`
@@ -28,6 +28,7 @@ type cli struct {
 	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
+	Clean        cleanCmd        `cmd:"" help:"Prune profile history; --gc explicitly collects the shared store"`
 }
 
 type configsCmd struct{}
@@ -36,6 +37,11 @@ type showCmd struct{}
 type statusCmd struct{}
 type installCmd struct{}
 type updateCmd struct{}
+type cleanCmd struct {
+	Keep   int  `help:"Number of highest-numbered other generations to retain in addition to the active one" default:"2"`
+	GC     bool `help:"Also collect unrooted objects throughout the shared Nix store, including objects unrelated to dotm"`
+	DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
+}
 type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
@@ -69,8 +75,14 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 	if command != "operations" && hasOperations {
 		return fmt.Errorf("operation flags cannot be combined with a subcommand")
 	}
-	if app.Yes && !app.RemoveExtra && command != "remove-extras" {
-		return fmt.Errorf("--yes requires -r or remove-extras")
+	if app.Yes && !app.RemoveExtra && command != "remove-extras" && command != "clean" {
+		return fmt.Errorf("--yes requires -r, remove-extras, or clean")
+	}
+	if command == "clean" {
+		if app.Clean.Keep < 0 {
+			return fmt.Errorf("--keep must be nonnegative")
+		}
+		return installed.Clean(context.Background(), installed.CleanOptions{Keep: app.Clean.Keep, GC: app.Clean.GC, DryRun: app.Clean.DryRun, Yes: app.Yes}, in, out, stderr)
 	}
 
 	data, err := manifest.Load(app.DataDir)

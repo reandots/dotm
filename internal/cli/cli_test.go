@@ -50,6 +50,9 @@ func (s *CLISuite) TestAmbiguousOrUnscopedMutationRequestsAreRejected() {
 		{"flags-with-mutation-command", []string{"-i", "update"}},
 		{"inspection-with-mutation-flag", []string{"status", "-r"}},
 		{"approval-without-removal", []string{"install", "--yes"}},
+		{"cleanup-with-operation-flag", []string{"clean", "-u"}},
+		{"negative-retention", []string{"clean", "--keep=-1"}},
+		{"cleanup-option-with-removal", []string{"remove-extras", "--gc"}},
 		{"no-operation", nil},
 	} {
 		s.Run(tc.name, func() {
@@ -59,5 +62,15 @@ func (s *CLISuite) TestAmbiguousOrUnscopedMutationRequestsAreRejected() {
 			_, err = os.Lstat(s.stateDir)
 			s.ErrorIs(err, os.ErrNotExist)
 		})
+	}
+}
+
+func (s *CLISuite) TestCleanupDoesNotRequireManifestsOrSelection() {
+	s.Require().NoError(os.RemoveAll(s.dataDir))
+	s.T().Setenv("XDG_CONFIG_HOME", filepath.Join(s.dataDir, "absent-config"))
+	for _, args := range [][]string{{"clean", "--dry-run"}, {"--yes", "clean", "--keep=0"}} {
+		s.Require().NoError(cli.Run(args, strings.NewReader(""), io.Discard, io.Discard))
+		_, err := os.Lstat(s.stateDir)
+		s.ErrorIs(err, os.ErrNotExist)
 	}
 }
