@@ -1,0 +1,107 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - gosec
+    - lll
+    - misspell
+    - noctx
+    - unconvert
+    - forcetypeassert
+  settings:
+    errcheck:
+      check-type-assertions: true
+      disable-default-exclusions: false
+      verbose: true
+    govet:
+      # Select analyzers explicitly; do not inherit golangci-lint defaults.
+      disable-all: true
+      enable:
+        - appends
+        - asmdecl
+        - assign
+        - atomic
+        - bools
+        - buildtag
+        - cgocall
+        - composites
+        - copylocks
+        - deepequalerrors
+        - defers
+        - directive
+        - errorsas
+        - findcall
+        - framepointer
+        - hostport
+        - httpresponse
+        - ifaceassert
+        - inline
+        - loopclosure
+        - lostcancel
+        - nilfunc
+        - nilness
+        - printf
+        - shadow
+        - shift
+        - sigchanyzer
+        - slog
+        - sortslice
+        - stdmethods
+        - stdversion
+        - stringintconv
+        - structtag
+        - testinggoroutine
+        - tests
+        - timeformat
+        - unmarshal
+        - unreachable
+        - unsafeptr
+        - unusedresult
+        - unusedwrite
+        - waitgroup
+    lll:
+      line-length: 120
+      tab-width: 4
+  exclusions:
+    generated: disable
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Kong help text lives in indivisible Go struct-tag literals.
+      - path: ^internal/cli/cli\.go$
+        source: '^\s*\w+\s+\w+\s+`(?:name|cmd|help):'
+        linters:
+          - lll
+
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      module-path: dotm
+      extra:
+        group-params: true
+        clothe-returns: true
+  exclusions:
+    generated: disable
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  timeout: 10m
+  relative-path-mode: gomod
+  tests: true
+  modules-download-mode: readonly

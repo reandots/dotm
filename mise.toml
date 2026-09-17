@@ -1,0 +1,5 @@
+[tools]
+go = "1.27.4"
+"aqua:golangci/golangci-lint" = "2.15.0"
+"go:golang.org/x/tools/gopls" = "v0.24.0"
+"go:github.com/go-delve/delve/cmd/dlv" = "1.27.2"
