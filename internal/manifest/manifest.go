@@ -37,8 +37,10 @@ type Data struct {
 	CatalogDir string
 }
 
-var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
-var attribute = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_'-]*(\.[a-zA-Z_][a-zA-Z0-9_'-]*)*$`)
+var (
+	identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+	attribute  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_'-]*(\.[a-zA-Z_][a-zA-Z0-9_'-]*)*$`)
+)
 
 func decode(path string, target any) error {
 	content, err := os.ReadFile(path)
@@ -92,7 +94,10 @@ func Load(dir string) (*Data, error) {
 		} {
 			if hook.value != nil {
 				if *hook.value == "" {
-					return nil, fmt.Errorf("%s: application %q: %s must be a nonempty file path", catalogPath, id, hook.name)
+					return nil, fmt.Errorf(
+						"%s: application %q: %s must be a nonempty file path",
+						catalogPath, id, hook.name,
+					)
 				}
 				*hook.target = *hook.value
 			}
@@ -109,7 +114,10 @@ func Load(dir string) (*Data, error) {
 			outputs := make(map[string]bool)
 			for _, output := range p.Outputs {
 				if !identifier.MatchString(output) || outputs[output] {
-					return nil, fmt.Errorf("%s: application %q: invalid or duplicate output %q", catalogPath, app.ID, output)
+					return nil, fmt.Errorf(
+						"%s: application %q: invalid or duplicate output %q",
+						catalogPath, app.ID, output,
+					)
 				}
 				outputs[output] = true
 			}

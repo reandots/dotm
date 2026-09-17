@@ -28,11 +28,18 @@ func (s *HookOperationSuite) fixture(preBody string) (string, manifest.Resolved)
 		"parent-pre":     "printf 'parent\\n' >> hook.log",
 		"post":           "printf 'post\\n' >> hook.log",
 	} {
-		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0755))
+		// #nosec G306 -- Hook fixtures need execution permission, restricted to the current user.
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700))
 	}
 	data := manifest.Data{CatalogDir: dir, Apps: map[string]manifest.Application{
-		"dependency": {ID: "dependency", Packages: []manifest.Package{{Attr: "which"}}, PreHook: "dependency-pre", PostHook: "post"},
-		"parent":     {ID: "parent", Dependencies: []string{"dependency"}, Packages: []manifest.Package{{Attr: "hello"}}, PreHook: "parent-pre", PostHook: "post"},
+		"dependency": {
+			ID: "dependency", Packages: []manifest.Package{{Attr: "which"}},
+			PreHook: "dependency-pre", PostHook: "post",
+		},
+		"parent": {
+			ID: "parent", Dependencies: []string{"dependency"},
+			Packages: []manifest.Package{{Attr: "hello"}}, PreHook: "parent-pre", PostHook: "post",
+		},
 	}}
 	desired, err := data.Resolve([]string{"parent"})
 	s.Require().NoError(err)

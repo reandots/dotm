@@ -52,43 +52,55 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		return err
 	}
 	retained, selected := planHistory(before, options.Keep)
-	if _, err := fmt.Fprintf(out, "Profile: %s\n", profile); err != nil {
-		return err
+	if _, outputErr := fmt.Fprintf(out, "Profile: %s\n", profile); outputErr != nil {
+		return outputErr
 	}
 	if before.current == 0 {
 		_, err = fmt.Fprintln(out, "Profile history: absent")
 	} else {
-		_, err = fmt.Fprintf(out, "Current generation: %d\nRetained generations: %s\nPrune generations: %s\n", before.current, formatGenerations(retained), formatGenerations(selected))
+		_, err = fmt.Fprintf(
+			out,
+			"Current generation: %d\nRetained generations: %s\nPrune generations: %s\n",
+			before.current,
+			formatGenerations(retained),
+			formatGenerations(selected),
+		)
 	}
 	if err != nil {
 		return err
 	}
 	if options.GC {
-		if _, err := fmt.Fprintln(stderr, "Warning: store-wide GC may delete unrelated unrooted objects throughout the shared Nix store."); err != nil {
-			return err
+		if _, outputErr := fmt.Fprintln(
+			stderr,
+			"Warning: store-wide GC may delete unrelated unrooted objects throughout the shared Nix store.",
+		); outputErr != nil {
+			return outputErr
 		}
 	}
 	if options.DryRun {
 		if options.GC {
-			if _, err := fmt.Fprintln(out, "GC dry-run uses current roots before pruning; additional objects may become eligible after pruning."); err != nil {
-				return err
+			if _, outputErr := fmt.Fprintln(
+				out,
+				"GC dry-run uses current roots before pruning; additional objects may become eligible after pruning.",
+			); outputErr != nil {
+				return outputErr
 			}
 			cmd := exec.CommandContext(ctx, "nix", "store", "gc", "--dry-run")
 			cmd.Stdout, cmd.Stderr = out, stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("nix store gc --dry-run: %w", err)
+			if runErr := cmd.Run(); runErr != nil {
+				return fmt.Errorf("nix store gc --dry-run: %w", runErr)
 			}
 		}
 		return nil
 	}
 	if len(selected) == 0 && !options.GC {
-		_, err := fmt.Fprintln(out, "Nothing to clean.")
-		return err
+		_, outputErr := fmt.Fprintln(out, "Nothing to clean.")
+		return outputErr
 	}
 	if !options.Yes {
-		ok, err := confirmClean(in, stderr)
-		if err != nil || !ok {
-			return err
+		ok, confirmErr := confirmClean(in, stderr)
+		if confirmErr != nil || !ok {
+			return confirmErr
 		}
 	}
 	current, err := readHistory(profile)
@@ -96,7 +108,8 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		return fmt.Errorf("revalidate profile history: %w", err)
 	}
 	if !reflect.DeepEqual(before, current) {
-		return fmt.Errorf("profile history changed during clean planning; rerun clean to review the current generations")
+		return fmt.Errorf("profile history changed during clean planning; " +
+			"rerun clean to review the current generations")
 	}
 	if len(selected) > 0 {
 		args := []string{"--profile", profile, "--delete-generations"}
@@ -106,8 +119,8 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		cmd := exec.CommandContext(ctx, "nix-env", args...)
 		cmd.Stdout, cmd.Stderr = stderr, stderr
 		var pruneErr error
-		if err := cmd.Run(); err != nil {
-			pruneErr = fmt.Errorf("nix-env --delete-generations: %w", err)
+		if runErr := cmd.Run(); runErr != nil {
+			pruneErr = fmt.Errorf("nix-env --delete-generations: %w", runErr)
 		}
 		after, inspectErr := readHistory(profile)
 		if inspectErr != nil {
@@ -117,7 +130,12 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		for _, g := range after.items {
 			numbers = append(numbers, g.number)
 		}
-		_, outputErr := fmt.Fprintf(out, "History after prune attempt — current: %d; generations: %s\n", after.current, formatGenerations(numbers))
+		_, outputErr := fmt.Fprintf(
+			out,
+			"History after prune attempt — current: %d; generations: %s\n",
+			after.current,
+			formatGenerations(numbers),
+		)
 		if pruneErr != nil || outputErr != nil {
 			return errors.Join(pruneErr, outputErr)
 		}
@@ -130,14 +148,16 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 			}
 		}
 		if !reflect.DeepEqual(expected, after) {
-			return fmt.Errorf("profile history after pruning differs from the approved retained generations; GC was not started")
+			return fmt.Errorf(
+				"profile history after pruning differs from the approved retained generations; GC was not started",
+			)
 		}
 	}
 	if options.GC {
 		cmd := exec.CommandContext(ctx, "nix", "store", "gc")
 		cmd.Stdout, cmd.Stderr = stderr, stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("nix store gc: %w; any completed history pruning remains in effect", err)
+		if runErr := cmd.Run(); runErr != nil {
+			return fmt.Errorf("nix store gc: %w; any completed history pruning remains in effect", runErr)
 		}
 		_, err = fmt.Fprintln(out, "Store-wide garbage collection completed.")
 	}
@@ -178,7 +198,10 @@ func readHistory(profile string) (history, error) {
 			currentLink = filepath.Join(directory, currentLink)
 		}
 		if filepath.Clean(currentLink) != fmt.Sprintf("%s-%d-link", profile, h.current) {
-			return history{}, fmt.Errorf("current generation must reference this profile's sibling history, not %s", h.link)
+			return history{}, fmt.Errorf(
+				"current generation must reference this profile's sibling history, not %s",
+				h.link,
+			)
 		}
 	}
 	for _, entry := range entries {
@@ -218,7 +241,10 @@ func readHistory(profile string) (history, error) {
 			return history{}, fmt.Errorf("generation %d manifest: %w", n, err)
 		}
 		if native.Version != 3 || native.Elements == nil {
-			return history{}, fmt.Errorf("generation %d requires a native version 3 profile manifest with an elements object", n)
+			return history{}, fmt.Errorf(
+				"generation %d requires a native version 3 profile manifest with an elements object",
+				n,
+			)
 		}
 		h.items = append(h.items, generation{number: n, link: link, path: dest})
 	}

@@ -20,7 +20,7 @@ func (s *ManifestSuite) fixture(catalog, configurations string) string {
 	s.T().Helper()
 	dir := s.T().TempDir()
 	for name, content := range map[string]string{"catalog.toml": catalog, "configurations.toml": configurations} {
-		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(content), 0600))
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
 	}
 	return dir
 }

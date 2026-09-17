@@ -42,7 +42,7 @@ func Run(ctx context.Context, desired manifest.Resolved, phase Phase, profile st
 		if err != nil {
 			return true, fmt.Errorf("application %q %s hook %q: %w", app.ID, phase, path, err)
 		}
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
 			return true, fmt.Errorf("application %q %s hook %q is not a regular executable file", app.ID, phase, path)
 		}
 		if _, err := fmt.Fprintf(stderr, "application %s %s: %s\n", app.ID, phase, path); err != nil {

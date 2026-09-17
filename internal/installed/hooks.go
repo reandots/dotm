@@ -12,7 +12,13 @@ import (
 
 // Hooks can have arbitrary side effects. Reinspect after a failed phase or a
 // successful post phase, but keep package state separate from hook completion.
-func runHookPhase(ctx context.Context, desired, scope manifest.Resolved, phase hooks.Phase, current Report, stderr io.Writer) (Report, error) {
+func runHookPhase(
+	ctx context.Context,
+	desired, scope manifest.Resolved,
+	phase hooks.Phase,
+	current Report,
+	stderr io.Writer,
+) (Report, error) {
 	configured, hookErr := hooks.Run(ctx, scope, phase, current.Profile, stderr)
 	if !configured || (phase == hooks.Pre && hookErr == nil) {
 		return current, hookErr

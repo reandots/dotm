@@ -31,17 +31,19 @@ type cli struct {
 	Clean        cleanCmd        `cmd:"" help:"Prune profile history; --gc explicitly collects the shared store"`
 }
 
-type configsCmd struct{}
-type appsCmd struct{}
-type showCmd struct{}
-type statusCmd struct{}
-type installCmd struct{}
-type updateCmd struct{}
-type cleanCmd struct {
-	Keep   int  `help:"Number of highest-numbered other generations to retain in addition to the active one" default:"2"`
-	GC     bool `help:"Also collect unrooted objects throughout the shared Nix store, including objects unrelated to dotm"`
-	DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
-}
+type (
+	configsCmd struct{}
+	appsCmd    struct{}
+	showCmd    struct{}
+	statusCmd  struct{}
+	installCmd struct{}
+	updateCmd  struct{}
+	cleanCmd   struct {
+		Keep   int  `help:"Number of highest-numbered other generations to retain in addition to the active one" default:"2"`
+		GC     bool `help:"Also collect unrooted objects throughout the shared Nix store, including objects unrelated to dotm"`
+		DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
+	}
+)
 type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
@@ -49,11 +51,19 @@ type removeExtrasCmd struct{}
 func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 	var app cli
 	helpRequested := false
-	parser, err := kong.New(&app, kong.Name("dotm"), kong.Description("Use a command or combine -i, -u, and -r. Operations always run in update, install, remove-extras order; stop on the first error without rollback."), kong.Writers(out, stderr), kong.Exit(func(code int) {
-		if code == 0 {
-			helpRequested = true
-		}
-	}))
+	parser, err := kong.New(
+		&app,
+		kong.Name("dotm"),
+		kong.Description("Use a command or combine -i, -u, and -r. "+
+			"Operations always run in update, install, remove-extras order; "+
+			"stop on the first error without rollback."),
+		kong.Writers(out, stderr),
+		kong.Exit(func(code int) {
+			if code == 0 {
+				helpRequested = true
+			}
+		}),
+	)
 	if err != nil {
 		return err
 	}
@@ -82,7 +92,12 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 		if app.Clean.Keep < 0 {
 			return fmt.Errorf("--keep must be nonnegative")
 		}
-		return installed.Clean(context.Background(), installed.CleanOptions{Keep: app.Clean.Keep, GC: app.Clean.GC, DryRun: app.Clean.DryRun, Yes: app.Yes}, in, out, stderr)
+		return installed.Clean(context.Background(), installed.CleanOptions{
+			Keep:   app.Clean.Keep,
+			GC:     app.Clean.GC,
+			DryRun: app.Clean.DryRun,
+			Yes:    app.Yes,
+		}, in, out, stderr)
 	}
 
 	data, err := manifest.Load(app.DataDir)
@@ -142,7 +157,10 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 			printStatus(out, config.Name, path, config.Apps, report)
 			break
 		}
-		fmt.Fprintf(out, "Configuration: %s\nSelection file: %s\nSelected: %s\nDesired applications (dependencies first):\n", config.Name, path, list(config.Apps))
+		fmt.Fprintf(out,
+			"Configuration: %s\nSelection file: %s\nSelected: %s\n"+
+				"Desired applications (dependencies first):\n",
+			config.Name, path, list(config.Apps))
 		selected := make(map[string]bool)
 		for _, id := range config.Apps {
 			selected[id] = true
@@ -168,7 +186,13 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 	return nil
 }
 
-func (app *cli) runOperations(command string, data *manifest.Data, desired manifest.Resolved, in io.Reader, stderr io.Writer) (installed.Report, error) {
+func (app *cli) runOperations(
+	command string,
+	data *manifest.Data,
+	desired manifest.Resolved,
+	in io.Reader,
+	stderr io.Writer,
+) (installed.Report, error) {
 	steps := [...]struct {
 		name      string
 		requested bool
@@ -235,7 +259,11 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 		} else if entry.OriginalURL != "" {
 			outputs = "default"
 		}
-		fmt.Fprintf(out, "  %s [%s; %s]\n    attribute: %s\n    source: %s\n    URL: %s\n    outputs: %s\n    store paths: %s\n    update recipe: %s\n", entry.Name, state, descriptor, entry.AttrPath, entry.OriginalURL, entry.URL, outputs, list(entry.StorePaths), update)
+		fmt.Fprintf(out,
+			"  %s [%s; %s]\n    attribute: %s\n    source: %s\n    URL: %s\n    outputs: %s\n"+
+				"    store paths: %s\n    update recipe: %s\n",
+			entry.Name, state, descriptor, entry.AttrPath, entry.OriginalURL, entry.URL,
+			outputs, list(entry.StorePaths), update)
 	}
 	fmt.Fprintln(out, "Extras:")
 	if len(report.Extras) == 0 {

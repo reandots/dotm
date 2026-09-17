@@ -25,18 +25,34 @@ func (s *HooksSuite) SetupTest() {
 
 func (s *HooksSuite) executable(name, body string) string {
 	path := filepath.Join(s.root, name)
-	s.Require().NoError(os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0755))
+	// #nosec G306 -- The hook must be executable; only the current user receives permissions.
+	s.Require().NoError(os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700))
 	return path
 }
 
 func (s *HooksSuite) TestRunUsesCatalogDirectoryAndProfileFirstPathAndRoutesOutput() {
 	bin := filepath.Join(s.root, "profile", "bin")
-	s.Require().NoError(os.MkdirAll(bin, 0755))
-	s.Require().NoError(os.WriteFile(filepath.Join(bin, "hook-tool"), []byte("#!/bin/sh\nprintf profile-tool\n"), 0755))
+	s.Require().NoError(os.MkdirAll(bin, 0o700))
+	// #nosec G306 -- This private profile fixture must be executable to exercise PATH lookup.
+	s.Require().NoError(
+		os.WriteFile(
+			filepath.Join(bin, "hook-tool"),
+			[]byte("#!/bin/sh\nprintf profile-tool\n"),
+			0o700,
+		),
+	)
 	s.T().Setenv("PATH", "/nonexistent")
-	path := s.executable("hook", "printf '%s|' \"$PWD\"; hook-tool; printf '|hook-output'; printf '|hook-error' >&2")
+	path := s.executable(
+		"hook",
+		"printf '%s|' \"$PWD\"; hook-tool; printf '|hook-output'; printf '|hook-error' >&2",
+	)
 	var output bytes.Buffer
-	desired := manifest.Resolved{CatalogDir: s.root, Applications: []manifest.Application{{ID: "editor", PreHook: path}}}
+	desired := manifest.Resolved{
+		CatalogDir: s.root,
+		Applications: []manifest.Application{
+			{ID: "editor", PreHook: path},
+		},
+	}
 	configured, err := Run(context.Background(), desired, Pre, filepath.Join(s.root, "profile"), &output)
 	s.True(configured)
 	s.Require().NoError(err)
@@ -49,9 +65,20 @@ func (s *HooksSuite) TestRunFailsFastAndIncludesApplicationPhaseAndPath() {
 	second := filepath.Join(s.root, "missing")
 	later := s.executable("later", "printf after")
 	var output bytes.Buffer
-	configured, err := Run(context.Background(), manifest.Resolved{CatalogDir: s.root, Applications: []manifest.Application{
-		{ID: "first", PreHook: first}, {ID: "broken", PreHook: second}, {ID: "later", PreHook: later},
-	}}, Pre, s.root, &output)
+	configured, err := Run(
+		context.Background(),
+		manifest.Resolved{
+			CatalogDir: s.root,
+			Applications: []manifest.Application{
+				{ID: "first", PreHook: first},
+				{ID: "broken", PreHook: second},
+				{ID: "later", PreHook: later},
+			},
+		},
+		Pre,
+		s.root,
+		&output,
+	)
 	s.True(configured)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "broken")
@@ -63,14 +90,25 @@ func (s *HooksSuite) TestRunFailsFastAndIncludesApplicationPhaseAndPath() {
 
 func (s *HooksSuite) TestRunRejectsFileWithoutExecutableBit() {
 	path := filepath.Join(s.root, "plain")
-	s.Require().NoError(os.WriteFile(path, []byte("plain"), 0644))
+	s.Require().NoError(os.WriteFile(path, []byte("plain"), 0o600))
 	var output bytes.Buffer
-	configured, err := Run(context.Background(), manifest.Resolved{CatalogDir: s.root, Applications: []manifest.Application{{ID: "plain", PreHook: path}}}, Pre, s.root, &output)
+	configured, err := Run(
+		context.Background(),
+		manifest.Resolved{
+			CatalogDir: s.root,
+			Applications: []manifest.Application{
+				{ID: "plain", PreHook: path},
+			},
+		},
+		Pre,
+		s.root,
+		&output,
+	)
 	s.True(configured)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "regular executable file")
 	s.NotContains(output.String(), "plain")
 	info, statErr := os.Stat(path)
 	s.Require().NoError(statErr)
-	s.Equal(os.FileMode(0644), info.Mode().Perm())
+	s.Equal(os.FileMode(0o600), info.Mode().Perm())
 }

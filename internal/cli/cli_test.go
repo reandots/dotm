@@ -28,8 +28,11 @@ func (s *CLISuite) SetupTest() {
 	s.Require().NoError(os.MkdirAll(s.dataDir, 0o700))
 	s.Require().NoError(os.MkdirAll(filepath.Join(configDir, "dotm"), 0o700))
 	s.Require().NoError(os.WriteFile(filepath.Join(s.dataDir, "catalog.toml"), nil, 0o600))
-	s.Require().NoError(os.WriteFile(filepath.Join(s.dataDir, "configurations.toml"), []byte("[[configurations]]\nname = \"empty\"\napps = []\n"), 0o600))
-	s.Require().NoError(os.WriteFile(filepath.Join(configDir, "dotm", "config.toml"), []byte("configuration = \"empty\"\n"), 0o600))
+	s.Require().NoError(os.WriteFile(
+		filepath.Join(s.dataDir, "configurations.toml"),
+		[]byte("[[configurations]]\nname = \"empty\"\napps = []\n"), 0o600))
+	s.Require().NoError(os.WriteFile(
+		filepath.Join(configDir, "dotm", "config.toml"), []byte("configuration = \"empty\"\n"), 0o600))
 	s.T().Setenv("XDG_CONFIG_HOME", configDir)
 	s.T().Setenv("XDG_STATE_HOME", s.stateDir)
 	s.T().Setenv("PATH", "")

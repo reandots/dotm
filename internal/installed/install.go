@@ -58,17 +58,29 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 	}
 	for _, app := range after.Applications {
 		if app.State != "installed" {
-			return after, fmt.Errorf("install finished but application %q is %s; inspect the profile before retrying", app.ID, app.State)
+			return after, fmt.Errorf(
+				"install finished but application %q is %s; inspect the profile before retrying",
+				app.ID,
+				app.State,
+			)
 		}
 	}
 	return runHookPhase(ctx, desired, desired, hooks.Post, after, stderr)
 }
 
-func installationPlan(before Report, desired manifest.Resolved, source string) (missing, retained []manifest.Package, allowInit bool, err error) {
+func installationPlan(
+	before Report,
+	desired manifest.Resolved,
+	source string,
+) (missing, retained []manifest.Package, allowInit bool, err error) {
 	for _, app := range before.Applications {
 		for _, p := range app.Packages {
 			if p.State == "ambiguous" {
-				return nil, nil, false, fmt.Errorf("cannot install with ambiguous descriptor %s: %s", p.Descriptor, strings.Join(p.Entries, ", "))
+				return nil, nil, false, fmt.Errorf(
+					"cannot install with ambiguous descriptor %s: %s",
+					p.Descriptor,
+					strings.Join(p.Entries, ", "),
+				)
 			}
 		}
 	}
@@ -85,7 +97,10 @@ func installationPlan(before Report, desired manifest.Resolved, source string) (
 		allowInit = false
 		p, ok := descriptor(e.Descriptor)
 		if !ok {
-			return nil, nil, false, fmt.Errorf("cannot regenerate source: native entry %q references it with an unrecognized descriptor", e.Name)
+			return nil, nil, false, fmt.Errorf(
+				"cannot regenerate source: native entry %q references it with an unrecognized descriptor",
+				e.Name,
+			)
 		}
 		packages[p.Key()] = p
 	}
@@ -102,11 +117,16 @@ func installationPlan(before Report, desired manifest.Resolved, source string) (
 	return missing, retained, allowInit, nil
 }
 
-func addPackages(ctx context.Context, profile, source, system string, packages []manifest.Package, stderr io.Writer) error {
+func addPackages(
+	ctx context.Context,
+	profile, source, system string,
+	packages []manifest.Package,
+	stderr io.Writer,
+) error {
 	if len(packages) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(profile), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(profile), 0o700); err != nil {
 		return err
 	}
 	args := []string{"profile", "add", "--profile", profile, "--no-update-lock-file"}

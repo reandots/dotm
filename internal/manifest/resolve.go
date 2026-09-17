@@ -28,7 +28,10 @@ func (d *Data) Resolve(roots []string) (Resolved, error) {
 			for stack[start] != id {
 				start++
 			}
-			return fmt.Errorf("dependency cycle: %s", strings.Join(append(append([]string(nil), stack[start:]...), id), " -> "))
+			return fmt.Errorf(
+				"dependency cycle: %s",
+				strings.Join(append(append([]string(nil), stack[start:]...), id), " -> "),
+			)
 		}
 		app, ok := d.Apps[id]
 		if !ok {

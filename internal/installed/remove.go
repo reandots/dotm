@@ -22,7 +22,14 @@ type removalUnit struct {
 // RemoveExtras collects all confirmations before removing exact native entry
 // names. After a native attempt, the returned report is freshly inspected even
 // on failure. An empty Profile means inspection itself failed.
-func RemoveExtras(ctx context.Context, catalog *manifest.Data, desired manifest.Resolved, yes bool, in io.Reader, stderr io.Writer) (Report, error) {
+func RemoveExtras(
+	ctx context.Context,
+	catalog *manifest.Data,
+	desired manifest.Resolved,
+	yes bool,
+	in io.Reader,
+	stderr io.Writer,
+) (Report, error) {
 	before, err := Inspect(ctx, desired)
 	if err != nil {
 		return Report{}, err
@@ -38,7 +45,9 @@ func RemoveExtras(ctx context.Context, catalog *manifest.Data, desired manifest.
 		return Report{}, err
 	}
 	if !reflect.DeepEqual(before.Entries, current.Entries) {
-		return current, fmt.Errorf("profile changed during removal planning; rerun remove-extras to review the current entries")
+		return current, fmt.Errorf(
+			"profile changed during removal planning; rerun remove-extras to review the current entries",
+		)
 	}
 	args := []string{"profile", "remove", "--profile", before.Profile, "--"}
 	args = append(args, names...)
@@ -46,7 +55,11 @@ func RemoveExtras(ctx context.Context, catalog *manifest.Data, desired manifest.
 	cmd.Stdout, cmd.Stderr = stderr, stderr
 	var operationErr error
 	if err := cmd.Run(); err != nil {
-		operationErr = fmt.Errorf("nix profile remove --profile %s: %w; no automatic rollback was attempted", before.Profile, err)
+		operationErr = fmt.Errorf(
+			"nix profile remove --profile %s: %w; no automatic rollback was attempted",
+			before.Profile,
+			err,
+		)
 	}
 	after, inspectErr := Inspect(ctx, desired)
 	if inspectErr != nil {
@@ -61,7 +74,10 @@ func RemoveExtras(ctx context.Context, catalog *manifest.Data, desired manifest.
 	}
 	for _, entry := range after.Entries {
 		if removed[entry.Name] {
-			return after, fmt.Errorf("removal finished but approved entry %q remains; inspect the profile before retrying", entry.Name)
+			return after, fmt.Errorf(
+				"removal finished but approved entry %q remains; inspect the profile before retrying",
+				entry.Name,
+			)
 		}
 	}
 	return after, nil
@@ -112,7 +128,11 @@ func confirmRemovals(units []removalUnit, yes bool, in io.Reader, out io.Writer)
 	if len(units) == 0 {
 		return nil, nil
 	}
-	if _, err := fmt.Fprintln(out, "Removal candidates (shared entries require approval of every listed application; nothing changes until all answers are collected):"); err != nil {
+	if _, err := fmt.Fprintln(
+		out,
+		"Removal candidates (shared entries require approval of every listed application; "+
+			"nothing changes until all answers are collected):",
+	); err != nil {
 		return nil, err
 	}
 	reader := bufio.NewReader(in)
@@ -135,7 +155,14 @@ func confirmRemovals(units []removalUnit, yes bool, in io.Reader, out io.Writer)
 			if descriptor == "" {
 				descriptor = "unknown"
 			}
-			if _, err := fmt.Fprintf(out, "  %s [%s; active=%t] store paths: %s\n", entry.Name, descriptor, entry.Active, strings.Join(entry.StorePaths, ", ")); err != nil {
+			if _, err := fmt.Fprintf(
+				out,
+				"  %s [%s; active=%t] store paths: %s\n",
+				entry.Name,
+				descriptor,
+				entry.Active,
+				strings.Join(entry.StorePaths, ", "),
+			); err != nil {
 				return nil, err
 			}
 		}

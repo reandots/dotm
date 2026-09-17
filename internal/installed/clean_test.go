@@ -33,7 +33,8 @@ func (s *CleanSuite) makeHistory(current int, numbers ...int) string {
 func (s *CleanSuite) addGeneration(profile string, n int) {
 	s.T().Helper()
 	target := s.T().TempDir()
-	s.Require().NoError(os.WriteFile(filepath.Join(target, "manifest.json"), []byte(`{"version":3,"elements":{}}`), 0o600))
+	s.Require().NoError(os.WriteFile(
+		filepath.Join(target, "manifest.json"), []byte(`{"version":3,"elements":{}}`), 0o600))
 	s.Require().NoError(os.Symlink(target, profile+"-"+strconv.Itoa(n)+"-link"))
 }
 
@@ -63,7 +64,10 @@ func (s *CleanSuite) TestRetentionPreservesActiveAcrossRollback() {
 }
 
 func (s *CleanSuite) TestRejectsInvalidHistoryWithoutMutation() {
-	for _, name := range []string{"corrupt-manifest", "unsupported-manifest", "dangling-retired", "noncanonical-number", "foreign-history", "orphaned-history"} {
+	for _, name := range []string{
+		"corrupt-manifest", "unsupported-manifest", "dangling-retired",
+		"noncanonical-number", "foreign-history", "orphaned-history",
+	} {
 		s.Run(name, func() {
 			profile := s.makeHistory(2, 1, 2)
 			switch name {
@@ -88,7 +92,13 @@ func (s *CleanSuite) TestRejectsInvalidHistoryWithoutMutation() {
 			case "orphaned-history":
 				s.Require().NoError(os.Remove(profile))
 			}
-			err := Clean(context.Background(), CleanOptions{Keep: 0, Yes: true, GC: true}, strings.NewReader(""), io.Discard, io.Discard)
+			err := Clean(
+				context.Background(),
+				CleanOptions{Keep: 0, Yes: true, GC: true},
+				strings.NewReader(""),
+				io.Discard,
+				io.Discard,
+			)
 			s.Error(err)
 			_, err = os.Lstat(profile + "-1-link")
 			s.NoError(err, "invalid state must not prune retired history")
@@ -114,7 +124,13 @@ func (s *CleanSuite) TestCancellationLeavesHistoryUntouched() {
 			profile := s.makeHistory(3, 1, 2, 3)
 			before, err := readHistory(profile)
 			s.Require().NoError(err)
-			err = Clean(context.Background(), CleanOptions{Keep: 0, GC: true}, strings.NewReader(tc.answer), io.Discard, io.Discard)
+			err = Clean(
+				context.Background(),
+				CleanOptions{Keep: 0, GC: true},
+				strings.NewReader(tc.answer),
+				io.Discard,
+				io.Discard,
+			)
 			if tc.fails {
 				s.Error(err)
 			} else {
@@ -178,7 +194,13 @@ func (failedCleanOutput) Write([]byte) (int, error) { return 0, io.ErrClosedPipe
 
 func (s *CleanSuite) TestUnreadablePlanCannotAuthorizeDeletion() {
 	profile := s.makeHistory(2, 1, 2)
-	err := Clean(context.Background(), CleanOptions{Keep: 0, Yes: true}, strings.NewReader(""), failedCleanOutput{}, io.Discard)
+	err := Clean(
+		context.Background(),
+		CleanOptions{Keep: 0, Yes: true},
+		strings.NewReader(""),
+		failedCleanOutput{},
+		io.Discard,
+	)
 	s.ErrorIs(err, io.ErrClosedPipe)
 	_, err = os.Lstat(profile + "-1-link")
 	s.NoError(err)

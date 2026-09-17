@@ -18,8 +18,11 @@ func TestInstallSuite(t *testing.T) { suite.Run(t, new(InstallSuite)) }
 func (s *InstallSuite) TestPlanRetainsRemovedAndInactiveDescriptors() {
 	const source = "/state/dotm/source"
 	desired := manifest.Resolved{
-		Applications: []manifest.Application{{ID: "tools", Packages: []manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}}}},
-		Packages:     []manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}},
+		Applications: []manifest.Application{{
+			ID:       "tools",
+			Packages: []manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}},
+		}},
+		Packages: []manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}},
 	}
 	before := classify(Report{Entries: []Entry{
 		{Name: "hello", Active: true, Descriptor: "hello", OriginalURL: "path:" + source},
@@ -30,14 +33,20 @@ func (s *InstallSuite) TestPlanRetainsRemovedAndInactiveDescriptors() {
 	missing, retained, allowInit, err := installationPlan(before, desired, source)
 	s.Require().NoError(err)
 	s.Equal([]manifest.Package{{Attr: "jq", Outputs: []string{"bin", "man"}}}, missing)
-	s.Equal([]manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}, {Attr: "which"}}, retained)
+	s.Equal([]manifest.Package{
+		{Attr: "hello"},
+		{Attr: "jq", Outputs: []string{"bin", "man"}},
+		{Attr: "which"},
+	}, retained)
 	s.False(allowInit, "native source users prohibit silently repinning a lost lock")
 }
 
 func (s *InstallSuite) TestAmbiguityRefusesEvenUnrelatedMissingPackages() {
 	desired := manifest.Resolved{
-		Applications: []manifest.Application{{ID: "tools", Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}}}},
-		Packages:     []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
+		Applications: []manifest.Application{{
+			ID: "tools", Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
+		}},
+		Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
 	}
 	before := classify(Report{Entries: []Entry{
 		{Name: "first", Active: true, Descriptor: "hello"},
@@ -49,7 +58,11 @@ func (s *InstallSuite) TestAmbiguityRefusesEvenUnrelatedMissingPackages() {
 }
 
 func (s *InstallSuite) TestUnrecognizedSourceEntryCannotBeErasedByRegeneration() {
-	_, _, _, err := installationPlan(Report{Entries: []Entry{{Name: "foreign-output", OriginalURL: "path:/source"}}}, manifest.Resolved{}, "/source")
+	_, _, _, err := installationPlan(
+		Report{Entries: []Entry{{Name: "foreign-output", OriginalURL: "path:/source"}}},
+		manifest.Resolved{},
+		"/source",
+	)
 	s.Error(err)
 }
 

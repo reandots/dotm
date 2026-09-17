@@ -25,8 +25,16 @@ func (s *pathSuite) SetupTest() {
 }
 
 func (s *pathSuite) TestAbsoluteRelativeAndSpaces() {
-	s.Equal(filepath.Join(s.dir, "relative path", "hook"), mustResolve(s.T(), "relative path/hook", s.dir))
-	s.Equal(filepath.Join(s.dir, "absolute path", "hook"), mustResolve(s.T(), filepath.Join(s.dir, "absolute path", "hook"), "/ignored"))
+	s.Equal(
+		filepath.Join(s.dir, "relative path", "hook"),
+		mustResolve(s.T(), "relative path/hook", s.dir),
+	)
+	s.Equal(
+		filepath.Join(s.dir, "absolute path", "hook"),
+		mustResolve(
+			s.T(), filepath.Join(s.dir, "absolute path", "hook"), "/ignored",
+		),
+	)
 }
 
 func (s *pathSuite) TestTildeOnlyAtStart() {
@@ -38,12 +46,21 @@ func (s *pathSuite) TestTildeOnlyAtStart() {
 
 func (s *pathSuite) TestNestedFallbackChosenAndSkipped() {
 	s.Require().NoError(os.Unsetenv("XDG_DATA_HOME"))
-	s.Equal(filepath.Join(s.dir, "home", ".local", "share", "app"), mustResolve(s.T(), "${XDG_DATA_HOME:-$HOME/.local/share}/app", s.dir))
+	s.Equal(
+		filepath.Join(s.dir, "home", ".local", "share", "app"),
+		mustResolve(s.T(), "${XDG_DATA_HOME:-$HOME/.local/share}/app", s.dir),
+	)
 	s.Require().NoError(os.Setenv("XDG_DATA_HOME", filepath.Join(s.dir, "data")))
 	s.Require().NoError(os.Unsetenv("UNSET_FALLBACK"))
-	s.Equal(filepath.Join(s.dir, "data", "app"), mustResolve(s.T(), "${XDG_DATA_HOME:-$UNSET_FALLBACK}/app", s.dir))
+	s.Equal(
+		filepath.Join(s.dir, "data", "app"),
+		mustResolve(s.T(), "${XDG_DATA_HOME:-$UNSET_FALLBACK}/app", s.dir),
+	)
 	s.Require().NoError(os.Unsetenv("XDG_DATA_HOME"))
-	s.Equal(filepath.Join(s.dir, "nested"), mustResolve(s.T(), "${XDG_DATA_HOME:-${UNSET_FALLBACK:-nested}}", s.dir))
+	s.Equal(
+		filepath.Join(s.dir, "nested"),
+		mustResolve(s.T(), "${XDG_DATA_HOME:-${UNSET_FALLBACK:-nested}}", s.dir),
+	)
 }
 
 func (s *pathSuite) TestTildeHomeIsLiteral() {
@@ -68,7 +85,10 @@ func (s *pathSuite) TestEnvironmentValuesAreNotReexpanded() {
 }
 
 func (s *pathSuite) TestRejectMalformedAndSubstitution() {
-	for _, value := range []string{"${BROKEN", "${X:=y}", "${X:+y}", "${}", "$", "$()", "$(touch /tmp/no)", "`touch /tmp/no`"} {
+	for _, value := range []string{
+		"${BROKEN", "${X:=y}", "${X:+y}", "${}", "$", "$()",
+		"$(touch /tmp/no)", "`touch /tmp/no`",
+	} {
 		_, err := resolvePath(value, s.dir)
 		s.Errorf(err, "expected rejection for %q", value)
 	}

@@ -58,6 +58,7 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 
 	_, operationErr := writeSource(source, system, retained, allowInit)
 	if operationErr == nil {
+		// #nosec G204 -- Fixed nix command; source is one path: argument, not an option or shell input.
 		cmd := exec.CommandContext(ctx, "nix", "flake", "update", "nixpkgs", "--flake", "path:"+source)
 		cmd.Stdout, cmd.Stderr = stderr, stderr
 		if err := cmd.Run(); err != nil {
@@ -111,7 +112,11 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	updated := classify(Report{Entries: after.Entries}, selected)
 	for _, app := range updated.Applications {
 		if app.State != "installed" {
-			return after, fmt.Errorf("update finished but application %q is %s; inspect the profile before retrying", app.ID, app.State)
+			return after, fmt.Errorf(
+				"update finished but application %q is %s; inspect the profile before retrying",
+				app.ID,
+				app.State,
+			)
 		}
 	}
 	if !reflect.DeepEqual(before.Extras, after.Extras) {
@@ -169,7 +174,11 @@ func updateTargets(before Report, desired manifest.Resolved, source string) ([]s
 		// can be pinned to another revision. Never claim the local lock updates
 		// those entries, nor remove/re-add them non-atomically to change sources.
 		if entry.OriginalURL != "path:"+source || !entry.Updateable {
-			return nil, fmt.Errorf("cannot update desired entry %q from %q using the machine-local source lock; no changes made", entry.Name, entry.OriginalURL)
+			return nil, fmt.Errorf(
+				"cannot update desired entry %q from %q using the machine-local source lock; no changes made",
+				entry.Name,
+				entry.OriginalURL,
+			)
 		}
 		names = append(names, entry.Name)
 	}

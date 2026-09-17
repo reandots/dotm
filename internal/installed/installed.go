@@ -131,7 +131,12 @@ func Inspect(ctx context.Context, desired manifest.Resolved) (Report, error) {
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return Report{}, fmt.Errorf("nix profile list --profile %s --json: %w: %s", profile, err, strings.TrimSpace(string(exit.Stderr)))
+			return Report{}, fmt.Errorf(
+				"nix profile list --profile %s --json: %w: %s",
+				profile,
+				err,
+				strings.TrimSpace(string(exit.Stderr)),
+			)
 		}
 		return Report{}, fmt.Errorf("nix profile list --profile %s --json: %w", profile, err)
 	}
@@ -167,14 +172,23 @@ func parseEntries(data []byte, system, source string) ([]Entry, error) {
 			Outputs     json.RawMessage `json:"outputs"`
 			StorePaths  []string        `json:"storePaths"`
 		}
-		if err := json.Unmarshal(raw, &native); err != nil || name == "" || native.Active == nil || len(native.StorePaths) == 0 {
-			return nil, fmt.Errorf("unsupported Nix profile entry %q: invalid identity, active flag, or store paths", name)
+		if err := json.Unmarshal(raw, &native); err != nil || name == "" ||
+			native.Active == nil || len(native.StorePaths) == 0 {
+			return nil, fmt.Errorf(
+				"unsupported Nix profile entry %q: invalid identity, active flag, or store paths",
+				name,
+			)
 		}
 		hasSource := native.AttrPath != "" || native.OriginalURL != "" || native.URL != ""
-		if hasSource && (native.AttrPath == "" || native.OriginalURL == "" || native.URL == "" || len(native.Outputs) == 0) {
+		if hasSource && (native.AttrPath == "" || native.OriginalURL == "" || native.URL == "" ||
+			len(native.Outputs) == 0) {
 			return nil, fmt.Errorf("unsupported Nix profile entry %q: incomplete source identity", name)
 		}
-		e := Entry{Name: name, Active: *native.Active, AttrPath: native.AttrPath, OriginalURL: native.OriginalURL, URL: native.URL, StorePaths: native.StorePaths, Updateable: hasSource}
+		e := Entry{
+			Name: name, Active: *native.Active, AttrPath: native.AttrPath,
+			OriginalURL: native.OriginalURL, URL: native.URL,
+			StorePaths: native.StorePaths, Updateable: hasSource,
+		}
 		if len(native.Outputs) != 0 && string(native.Outputs) != "null" {
 			if err := json.Unmarshal(native.Outputs, &e.Outputs); err != nil || len(e.Outputs) == 0 {
 				return nil, fmt.Errorf("unsupported outputs in profile entry %q", name)
@@ -201,8 +215,10 @@ func parseEntries(data []byte, system, source string) ([]Entry, error) {
 
 // These match the catalog's deliberately restricted descriptor grammar, not
 // arbitrary Nix expressions or quoted attribute segments.
-var attrName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_'-]*(\.[a-zA-Z_][a-zA-Z0-9_'-]*)*$`)
-var outputName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+var (
+	attrName   = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_'-]*(\.[a-zA-Z_][a-zA-Z0-9_'-]*)*$`)
+	outputName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+)
 
 func descriptor(key string) (manifest.Package, bool) {
 	parts := strings.Split(key, "^")

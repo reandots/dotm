@@ -30,7 +30,11 @@ func (s *InstalledSuite) nativeJSON(entries map[string]any) []byte {
 }
 
 func sourceEntry(attr, source string, outputs any) map[string]any {
-	return map[string]any{"active": true, "attrPath": attr, "originalUrl": source, "url": source + "?narHash=locked", "outputs": outputs, "storePaths": []string{"/nix/store/example-tool"}}
+	return map[string]any{
+		"active": true, "attrPath": attr, "originalUrl": source,
+		"url": source + "?narHash=locked", "outputs": outputs,
+		"storePaths": []string{"/nix/store/example-tool"},
+	}
 }
 
 func (s *InstalledSuite) TestNativeDescriptorIdentity() {
@@ -50,14 +54,26 @@ func (s *InstalledSuite) TestNativeDescriptorIdentity() {
 		{"invalid encoded descriptor", managed("a;bad"), "path:" + source, "", nil},
 		{"noncanonical encoded outputs", managed("jq^man,bin"), "path:" + source, "", []string{"bin", "man"}},
 		{"legacy default", "legacyPackages." + system + ".hello", "github:NixOS/nixpkgs/old-revision", "hello", nil},
-		{"legacy explicit out", "legacyPackages." + system + ".hello", "github:NixOS/nixpkgs/new-revision", "hello^out", []string{"out"}},
-		{"legacy unsorted outputs", "legacyPackages." + system + ".jq", "github:NixOS/nixpkgs/revision", "jq^bin,man", []string{"man", "bin"}},
+		{
+			"legacy explicit out", "legacyPackages." + system + ".hello",
+			"github:NixOS/nixpkgs/new-revision", "hello^out",
+			[]string{"out"},
+		},
+		{
+			"legacy unsorted outputs", "legacyPackages." + system + ".jq",
+			"github:NixOS/nixpkgs/revision", "jq^bin,man",
+			[]string{"man", "bin"},
+		},
 		{"different repository", "legacyPackages." + system + ".hello", "github:someone/nixpkgs/revision", "", nil},
 		{"unknown registry", "legacyPackages." + system + ".hello", "flake:nixpkgs", "", nil},
 		{"different output tree", "packages." + system + ".hello", "github:NixOS/nixpkgs/revision", "", nil},
 	} {
 		s.Run(tt.name, func() {
-			entries, err := parseEntries(s.nativeJSON(map[string]any{"native": sourceEntry(tt.attr, tt.original, tt.outputs)}), system, source)
+			entries, err := parseEntries(
+				s.nativeJSON(map[string]any{"native": sourceEntry(tt.attr, tt.original, tt.outputs)}),
+				system,
+				source,
+			)
 			s.Require().NoError(err)
 			s.Equal(tt.want, entries[0].Descriptor)
 		})
@@ -90,7 +106,10 @@ func (s *InstalledSuite) TestUnknownEntriesAndRetainedDescriptors() {
 }
 
 func (s *InstalledSuite) TestRejectMalformedNativeState() {
-	for _, input := range []string{"", "null", "{}", `{"version":4,"elements":{}}`, `{"version":3,"elements":null}`, `{"version":3,"elements":[]}`} {
+	for _, input := range []string{
+		"", "null", "{}", `{"version":4,"elements":{}}`,
+		`{"version":3,"elements":null}`, `{"version":3,"elements":[]}`,
+	} {
 		_, err := parseEntries([]byte(input), "x86_64-linux", "/source")
 		s.Error(err, "unsupported state: %s", input)
 	}
@@ -152,10 +171,15 @@ func (s *InstalledSuite) TestDuplicateActiveEntriesAreAmbiguous() {
 			r := classify(Report{Entries: []Entry{
 				{Name: "one", Active: true, Descriptor: "tool"},
 				{Name: "two", Active: tt.secondActive, Descriptor: "tool"},
-			}}, manifest.Resolved{Applications: []manifest.Application{{ID: "app", Packages: []manifest.Package{{Attr: "tool"}}}}})
+			}}, manifest.Resolved{Applications: []manifest.Application{{
+				ID: "app", Packages: []manifest.Package{{Attr: "tool"}},
+			}}})
 			s.Equal(tt.appState, r.Applications[0].State)
 			s.Equal(tt.packageState, r.Applications[0].Packages[0].State)
-			s.Equal([]string{"one", "two"}, r.Applications[0].Packages[0].Entries, "duplicate identities remain visible")
+			s.Equal(
+				[]string{"one", "two"}, r.Applications[0].Packages[0].Entries,
+				"duplicate identities remain visible",
+			)
 		})
 	}
 }
@@ -165,12 +189,14 @@ func (s *InstalledSuite) TestMissingAndDanglingProfiles() {
 	s.T().Setenv("XDG_STATE_HOME", base)
 	// A missing environment does not need Nix and must remain absent.
 	s.T().Setenv("PATH", "")
-	r, err := Inspect(context.Background(), manifest.Resolved{Applications: []manifest.Application{{ID: "app", Packages: []manifest.Package{{Attr: "tool"}}}}})
+	r, err := Inspect(context.Background(), manifest.Resolved{Applications: []manifest.Application{{
+		ID: "app", Packages: []manifest.Package{{Attr: "tool"}},
+	}}})
 	s.Require().NoError(err)
 	s.Equal("missing", r.Applications[0].State)
 	_, err = os.Lstat(base)
 	s.ErrorIs(err, os.ErrNotExist, "inspection must not create state")
-	s.Require().NoError(os.MkdirAll(filepath.Join(base, "nix"), 0700))
+	s.Require().NoError(os.MkdirAll(filepath.Join(base, "nix"), 0o700))
 	profile := filepath.Join(base, "nix", "profile")
 	s.Require().NoError(os.Symlink("missing-generation", profile))
 	_, err = Inspect(context.Background(), manifest.Resolved{})
@@ -199,11 +225,11 @@ func (s *InstalledSuite) TestRejectNonProfileLocations() {
 			s.T().Setenv("XDG_STATE_HOME", base)
 			s.T().Setenv("PATH", "")
 			profile := filepath.Join(base, "nix", "profile")
-			s.Require().NoError(os.MkdirAll(filepath.Dir(profile), 0700))
+			s.Require().NoError(os.MkdirAll(filepath.Dir(profile), 0o700))
 			if tt.directory {
-				s.Require().NoError(os.Mkdir(profile, 0700))
+				s.Require().NoError(os.Mkdir(profile, 0o700))
 			} else {
-				s.Require().NoError(os.WriteFile(profile, []byte("not a profile"), 0600))
+				s.Require().NoError(os.WriteFile(profile, []byte("not a profile"), 0o600))
 			}
 			_, err := Inspect(context.Background(), manifest.Resolved{})
 			s.ErrorIs(err, tt.want)

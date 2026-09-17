@@ -22,16 +22,36 @@ func (s *UpdateSuite) TestTargetsCompleteInstalledApplicationsButSkipNewRoots() 
 		Applications: []manifest.Application{
 			{ID: "leaf", Packages: []manifest.Package{{Attr: "xz"}}},
 			{ID: "companion", Dependencies: []string{"leaf"}, Packages: []manifest.Package{{Attr: "which"}}},
-			{ID: "tool", Dependencies: []string{"companion"}, Packages: []manifest.Package{{Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}, {Attr: "fd"}}},
+			{
+				ID: "tool", Dependencies: []string{"companion"},
+				Packages: []manifest.Package{
+					{Attr: "hello"},
+					{Attr: "jq", Outputs: []string{"bin", "man"}},
+					{Attr: "fd"},
+				},
+			},
 			{ID: "new-app", Packages: []manifest.Package{{Attr: "ripgrep"}}},
 		},
-		Packages: []manifest.Package{{Attr: "fd"}, {Attr: "hello"}, {Attr: "jq", Outputs: []string{"bin", "man"}}, {Attr: "ripgrep"}, {Attr: "which"}, {Attr: "xz"}},
+		Packages: []manifest.Package{
+			{Attr: "fd"},
+			{Attr: "hello"},
+			{Attr: "jq", Outputs: []string{"bin", "man"}},
+			{Attr: "ripgrep"},
+			{Attr: "which"},
+			{Attr: "xz"},
+		},
 	}
 	before := classify(Report{Entries: []Entry{
 		{Name: "tool", Active: true, Descriptor: "hello", OriginalURL: "path:" + source, Updateable: true},
 		{Name: "json", Active: true, Descriptor: "jq^bin,man", OriginalURL: "path:" + source, Updateable: true},
-		{Name: "inactive-companion", Active: false, Descriptor: "which", OriginalURL: "path:" + source, Updateable: true},
-		{Name: "removed-from-catalog", Active: true, Descriptor: "gnused", OriginalURL: "path:" + source, Updateable: true},
+		{
+			Name: "inactive-companion", Active: false, Descriptor: "which",
+			OriginalURL: "path:" + source, Updateable: true,
+		},
+		{
+			Name: "removed-from-catalog", Active: true, Descriptor: "gnused",
+			OriginalURL: "path:" + source, Updateable: true,
+		},
 		{Name: "unknown", Active: true},
 	}}, desired)
 	selected := updateSelection(before, desired)
@@ -80,8 +100,10 @@ func (s *UpdateSuite) TestSharedActiveDescriptorCountsAsPartialInstallation() {
 
 func (s *UpdateSuite) TestAmbiguousInstalledApplicationStillRefusesMutation() {
 	desired := manifest.Resolved{
-		Applications: []manifest.Application{{ID: "tool", Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}}}},
-		Packages:     []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
+		Applications: []manifest.Application{{
+			ID: "tool", Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
+		}},
+		Packages: []manifest.Package{{Attr: "hello"}, {Attr: "which"}},
 	}
 	before := classify(Report{Entries: []Entry{
 		{Name: "first", Active: true, Descriptor: "hello"},
@@ -95,7 +117,10 @@ func (s *UpdateSuite) TestAmbiguousInstalledApplicationStillRefusesMutation() {
 func (s *UpdateSuite) TestForeignDesiredRecipeCannotPretendToFollowLocalLock() {
 	desired := manifest.Resolved{Packages: []manifest.Package{{Attr: "hello"}}}
 	before := Report{Entries: []Entry{
-		{Name: "foreign", Active: true, Descriptor: "hello", OriginalURL: "github:NixOS/nixpkgs/pinned-revision", Updateable: true},
+		{
+			Name: "foreign", Active: true, Descriptor: "hello",
+			OriginalURL: "github:NixOS/nixpkgs/pinned-revision", Updateable: true,
+		},
 	}}
 	names, err := updateTargets(before, desired, "/source")
 	s.Error(err)
@@ -130,8 +155,12 @@ func (s *UpdateSuite) TestNewDesiredApplicationsLeaveAbsentEnvironmentUntouched(
 }
 
 func (s *UpdateSuite) TestSourceMetadataAloneIsNotAPackageChange() {
-	before := Report{Entries: []Entry{{Name: "tool", URL: "path:/source?narHash=old", StorePaths: []string{"/nix/store/hello"}}}}
-	after := Report{Entries: []Entry{{Name: "tool", URL: "path:/source?narHash=new", StorePaths: []string{"/nix/store/hello"}}}}
+	before := Report{Entries: []Entry{{
+		Name: "tool", URL: "path:/source?narHash=old", StorePaths: []string{"/nix/store/hello"},
+	}}}
+	after := Report{Entries: []Entry{{
+		Name: "tool", URL: "path:/source?narHash=new", StorePaths: []string{"/nix/store/hello"},
+	}}}
 	s.False(packagePathsChanged(before, after))
 	after.Entries[0].StorePaths = []string{"/nix/store/new-hello"}
 	s.True(packagePathsChanged(before, after))

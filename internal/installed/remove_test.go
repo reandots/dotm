@@ -37,7 +37,11 @@ func (s *RemoveSuite) TestSharedEntriesRequireEveryApplicationApproval() {
 	units := removalUnits(before, catalog, desired)
 	s.Require().Len(units, 2)
 	s.Equal("alpha", units[0].application)
-	s.Equal([]Entry{{Name: "jq", Active: true, Descriptor: "jq"}}, units[0].entries, "partial application excludes desired shared components")
+	s.Equal(
+		[]Entry{{Name: "jq", Active: true, Descriptor: "jq"}},
+		units[0].entries,
+		"partial application excludes desired shared components",
+	)
 	for _, tc := range []struct {
 		name    string
 		answers string
@@ -107,7 +111,10 @@ func (s *RemoveSuite) TestAbsentProfileDoesNotCreateStateOrRequireNix() {
 	base := filepath.Join(s.T().TempDir(), "state")
 	s.T().Setenv("XDG_STATE_HOME", base)
 	s.T().Setenv("PATH", "")
-	r, err := RemoveExtras(context.Background(), &manifest.Data{}, manifest.Resolved{}, false, strings.NewReader(""), io.Discard)
+	r, err := RemoveExtras(
+		context.Background(), &manifest.Data{}, manifest.Resolved{}, false,
+		strings.NewReader(""), io.Discard,
+	)
 	s.Require().NoError(err)
 	s.Equal(filepath.Join(base, "nix", "profile"), r.Profile)
 	_, err = os.Lstat(base)
