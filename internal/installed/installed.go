@@ -195,7 +195,8 @@ func parseEntries(data []byte, system, source string) ([]Entry, error) {
 			}
 			sort.Strings(e.Outputs)
 			for i, output := range e.Outputs {
-				if !outputName.MatchString(output) || (i > 0 && output == e.Outputs[i-1]) {
+				allOutputs := output == "*" && len(e.Outputs) == 1
+				if (!allOutputs && !outputName.MatchString(output)) || (i > 0 && output == e.Outputs[i-1]) {
 					return nil, fmt.Errorf("invalid outputs in profile entry %q", name)
 				}
 			}
@@ -248,6 +249,10 @@ func isNixpkgs(ref string) bool {
 }
 
 func identify(e Entry, system, source string) string {
+	// Native all-output selection has no equivalent in the catalog grammar.
+	if len(e.Outputs) == 1 && e.Outputs[0] == "*" {
+		return ""
+	}
 	prefix := "packages." + system + ".dotm_"
 	if strings.HasPrefix(e.AttrPath, prefix) && e.OriginalURL == "path:"+source {
 		// Canonical descriptor bytes live in the native manifest's attrPath.

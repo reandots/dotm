@@ -80,6 +80,73 @@ func (s *InstalledSuite) TestNativeDescriptorIdentity() {
 	}
 }
 
+func (s *InstalledSuite) TestAllOutputsRetainNativeIdentityWithoutMatchingCatalog() {
+	const source = "/state/dotm/source"
+	for _, tc := range []struct {
+		name, attr, original string
+	}{
+		{"direct nixpkgs", "legacyPackages.x86_64-linux.hello", "github:NixOS/nixpkgs/revision"},
+		{"managed default", "packages.x86_64-linux.dotm_68656c6c6f", "path:" + source},
+		{"managed explicit", "packages.x86_64-linux.dotm_68656c6c6f5e6f7574", "path:" + source},
+		{"foreign", "packages.x86_64-linux.hello", "github:someone/tool/revision"},
+	} {
+		s.Run(tc.name, func() {
+			native := sourceEntry(tc.attr, tc.original, []string{"*"})
+			paths := []string{"/nix/store/hello-out", "/nix/store/hello-doc"}
+			native["storePaths"] = paths
+			entries, err := parseEntries(s.nativeJSON(map[string]any{"all": native}), "x86_64-linux", source)
+			s.Require().NoError(err)
+			s.Require().Len(entries, 1)
+			s.Equal(Entry{
+				Name: "all", Active: true, AttrPath: tc.attr, OriginalURL: tc.original,
+				URL: tc.original + "?narHash=locked", Outputs: []string{"*"},
+				StorePaths: []string{"/nix/store/hello-doc", "/nix/store/hello-out"}, Updateable: true,
+			}, entries[0])
+			r := classify(Report{Entries: entries}, manifest.Resolved{Applications: []manifest.Application{
+				{ID: "default", Packages: []manifest.Package{{Attr: "hello"}}},
+				{ID: "explicit", Packages: []manifest.Package{{Attr: "hello", Outputs: []string{"out"}}}},
+			}})
+			s.Equal("missing", r.Applications[0].State)
+			s.Equal("missing", r.Applications[1].State)
+			s.Equal(entries, r.Extras)
+		})
+	}
+}
+
+func (s *InstalledSuite) TestAllOutputsDoNotBlockUnrelatedManagedPlanning() {
+	const source = "/state/dotm/source"
+	entries, err := parseEntries(s.nativeJSON(map[string]any{
+		"all":     sourceEntry("legacyPackages.x86_64-linux.which", "github:NixOS/nixpkgs/revision", []string{"*"}),
+		"managed": sourceEntry("packages.x86_64-linux.dotm_68656c6c6f", "path:"+source, nil),
+	}), "x86_64-linux", source)
+	s.Require().NoError(err)
+	packages := []manifest.Package{{Attr: "hello"}, {Attr: "which"}}
+	desired := manifest.Resolved{
+		Applications: []manifest.Application{{ID: "tools", Packages: packages}},
+		Packages:     packages,
+	}
+	before := classify(Report{Entries: entries}, desired)
+	missing, retained, allowInit, err := installationPlan(before, desired, source)
+	s.Require().NoError(err)
+	s.Equal([]manifest.Package{{Attr: "which"}}, missing)
+	s.Equal(packages, retained)
+	s.False(allowInit)
+	selected := updateSelection(before, desired)
+	names, err := updateTargets(before, selected, source)
+	s.Require().NoError(err)
+	s.Equal([]string{"managed"}, names)
+	missing, retained, _, err = installationPlan(before, selected, source)
+	s.Require().NoError(err)
+	s.Equal([]manifest.Package{{Attr: "which"}}, missing)
+	s.Equal(packages, retained)
+	units := removalUnits(before, &manifest.Data{Apps: map[string]manifest.Application{
+		"tools": desired.Applications[0],
+	}}, desired)
+	s.Require().Len(units, 1)
+	s.Empty(units[0].application)
+	s.Equal([]Entry{entries[0]}, units[0].entries)
+}
+
 func (s *InstalledSuite) TestUnknownEntriesAndRetainedDescriptors() {
 	entries, err := parseEntries(s.nativeJSON(map[string]any{
 		"store-only": map[string]any{"active": true, "storePaths": []string{"/nix/store/unknown"}},
@@ -123,6 +190,10 @@ func (s *InstalledSuite) TestRejectMalformedNativeState() {
 		sourceEntry("tool", "path:/source", []string{}),
 		sourceEntry("tool", "path:/source", []string{"out", "out"}),
 		sourceEntry("tool", "path:/source", []string{"bad^output"}),
+		sourceEntry("tool", "path:/source", []string{"*", "out"}),
+		sourceEntry("tool", "path:/source", []string{"*", "*"}),
+		sourceEntry("tool", "path:/source", []string{""}),
+		sourceEntry("tool", "path:/source", []string{"out*"}),
 		sourceEntry("tool", "path:/source", "out"),
 	} {
 		_, err := parseEntries(s.nativeJSON(map[string]any{"bad": entry}), "x86_64-linux", "/source")
