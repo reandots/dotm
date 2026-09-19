@@ -21,6 +21,11 @@ import (
 // and extras are left alone. Source advancement and the two profile batches are
 // separate commits; failure returns freshly inspected state, not a rollback.
 func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
+	ctx, release, err := BeginMutation(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	defer release()
 	before, err := Inspect(ctx, desired)
 	if err != nil {
 		return Report{}, err

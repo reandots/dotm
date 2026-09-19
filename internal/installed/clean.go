@@ -42,6 +42,14 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 	if options.Keep < 0 {
 		return fmt.Errorf("clean: keep count must be nonnegative")
 	}
+	if !options.DryRun {
+		locked, release, lockErr := BeginMutation(ctx)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer release()
+		ctx = locked
+	}
 	base, err := stateHome()
 	if err != nil {
 		return err

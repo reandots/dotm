@@ -19,6 +19,11 @@ import (
 // The returned report is freshly inspected after any attempted mutation, even
 // on failure. An empty Profile means inspection itself failed.
 func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
+	ctx, release, err := BeginMutation(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	defer release()
 	before, err := Inspect(ctx, desired)
 	if err != nil {
 		return Report{}, err

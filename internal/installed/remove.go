@@ -30,6 +30,11 @@ func RemoveExtras(
 	in io.Reader,
 	stderr io.Writer,
 ) (Report, error) {
+	ctx, release, err := BeginMutation(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	defer release()
 	before, err := Inspect(ctx, desired)
 	if err != nil {
 		return Report{}, err

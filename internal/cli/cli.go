@@ -201,7 +201,11 @@ func (app *cli) runOperations(
 		{"install", app.InstallMissing || command == "install"},
 		{"remove-extras", app.RemoveExtra || command == "remove-extras"},
 	}
-	ctx := context.Background()
+	ctx, release, lockErr := installed.BeginMutation(context.Background())
+	if lockErr != nil {
+		return installed.Report{}, lockErr
+	}
+	defer release()
 	var report installed.Report
 	for _, step := range steps {
 		if !step.requested {
