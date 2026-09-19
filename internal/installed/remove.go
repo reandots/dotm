@@ -30,7 +30,7 @@ func RemoveExtras(
 	in io.Reader,
 	stderr io.Writer,
 ) (Report, error) {
-	ctx, release, err := BeginMutation(ctx)
+	ctx, release, err := beginOperation(ctx, stderr)
 	if err != nil {
 		return Report{}, err
 	}

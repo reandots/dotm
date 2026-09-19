@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -50,8 +51,8 @@ func BeginMutation(ctx context.Context) (context.Context, func(), error) {
 		return ctx, nil, fmt.Errorf("mutation lock directory %s must be private and owned by the current user", dir)
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%x.lock", sha256.Sum256([]byte(base))))
-	// Do not follow a substituted lock-file symlink. Go opens descriptors with
-	// close-on-exec, so hooks cannot accidentally retain or reuse ownership.
+	// Do not follow substituted symlinks. Descriptors are close-on-exec unless
+	// explicitly passed to a native mutation to exclude recovery until it exits.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("open mutation lock: %w", err)
@@ -78,6 +79,14 @@ func BeginMutation(ctx context.Context) (context.Context, func(), error) {
 			lease.file = nil
 		}
 	}, nil
+}
+
+// Native mutations retain ownership if their dotm parent is killed, preventing
+// recovery from racing a surviving Nix process that may activate a generation.
+func retainMutationLease(ctx context.Context, cmd *exec.Cmd) {
+	if lease, ok := ctx.Value(mutationKey{}).(*mutationLease); ok && lease.file != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, lease.file)
+	}
 }
 
 // Resolve existing ancestors without creating missing directories. Aliases of

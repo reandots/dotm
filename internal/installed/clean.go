@@ -43,7 +43,7 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		return fmt.Errorf("clean: keep count must be nonnegative")
 	}
 	if !options.DryRun {
-		locked, release, lockErr := BeginMutation(ctx)
+		locked, release, lockErr := beginOperation(ctx, stderr)
 		if lockErr != nil {
 			return lockErr
 		}

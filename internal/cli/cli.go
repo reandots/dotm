@@ -56,7 +56,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 		kong.Name("dotm"),
 		kong.Description("Use a command or combine -i, -u, and -r. "+
 			"Operations always run in update, install, remove-extras order; "+
-			"stop on the first error without rollback."),
+			"stop on the first error. Failed updates attempt to restore initial package/source state; "+
+			"incomplete recovery blocks later mutations; "+
+			"earlier operations and arbitrary hook effects are not rolled back."),
 		kong.Writers(out, stderr),
 		kong.Exit(func(code int) {
 			if code == 0 {

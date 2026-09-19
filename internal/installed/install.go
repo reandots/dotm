@@ -19,7 +19,7 @@ import (
 // The returned report is freshly inspected after any attempted mutation, even
 // on failure. An empty Profile means inspection itself failed.
 func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
-	ctx, release, err := BeginMutation(ctx)
+	ctx, release, err := beginOperation(ctx, stderr)
 	if err != nil {
 		return Report{}, err
 	}
@@ -143,6 +143,7 @@ func addPackages(
 		args = append(args, ref)
 	}
 	cmd := exec.CommandContext(ctx, "nix", args...)
+	retainMutationLease(ctx, cmd)
 	cmd.Stdout, cmd.Stderr = stderr, stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("nix profile add --profile %s: %w", profile, err)

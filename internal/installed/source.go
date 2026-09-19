@@ -100,7 +100,9 @@ func renderSource(system string, packages []manifest.Package) string {
 }
 
 func atomicWrite(path string, content []byte) error {
-	dir := filepath.Dir(path)
+	// Staging outside the path flake prevents interrupted writes from leaving
+	// unrelated temporary files in its next source snapshot.
+	dir := filepath.Dir(filepath.Dir(path))
 	f, err := os.CreateTemp(dir, ".flake.nix-*")
 	if err != nil {
 		return err

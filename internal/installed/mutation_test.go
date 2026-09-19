@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -36,6 +37,31 @@ func (s *MutationSuite) TestOwnershipReleaseAndCombinedContext() {
 	s.T().Cleanup(releaseNext)
 	_, _, err = BeginMutation(ctx)
 	s.ErrorIs(err, errMutationBusy, "a released context must not authorize a later operation")
+}
+
+func (s *MutationSuite) TestNativeChildRetainsOwnershipUntilExit() {
+	s.T().Setenv("XDG_STATE_HOME", filepath.Join(s.T().TempDir(), "state"))
+	ctx, release, err := BeginMutation(context.Background())
+	s.Require().NoError(err)
+	s.T().Cleanup(release)
+	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", "read -r line")
+	input, err := cmd.StdinPipe()
+	s.Require().NoError(err)
+	retainMutationLease(ctx, cmd)
+	s.Require().NoError(cmd.Start())
+	s.T().Cleanup(func() {
+		_ = input.Close()
+		_ = cmd.Process.Kill()
+	})
+	release()
+	_, _, err = BeginMutation(context.Background())
+	s.ErrorIs(err, errMutationBusy, "recovery must not race a surviving native mutation")
+	_, err = io.WriteString(input, "finish\n")
+	s.Require().NoError(err)
+	s.Require().NoError(cmd.Wait())
+	_, releaseNext, err := BeginMutation(context.Background())
+	s.Require().NoError(err)
+	releaseNext()
 }
 
 func (s *MutationSuite) TestAliasesContendButIndependentStateDoesNot() {

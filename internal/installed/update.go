@@ -18,10 +18,10 @@ import (
 
 // Update advances the source and completes installed desired applications,
 // including their current dependencies. Wholly absent independent applications
-// and extras are left alone. Source advancement and the two profile batches are
-// separate commits; failure returns freshly inspected state, not a rollback.
-func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
-	ctx, release, err := BeginMutation(ctx)
+// and extras are left alone. A durable snapshot restores the original package
+// and source state on failure; arbitrary hook effects cannot be restored.
+func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (report Report, resultErr error) {
+	ctx, release, err := beginOperation(ctx, stderr)
 	if err != nil {
 		return Report{}, err
 	}
@@ -57,26 +57,50 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	if err != nil && !os.IsNotExist(err) {
 		return before, fmt.Errorf("read source lock before update: %w", err)
 	}
-	if report, err := runHookPhase(ctx, desired, selected, hooks.Pre, before, stderr); err != nil {
-		return report, err
+	if hookReport, hookErr := runHookPhase(ctx, desired, selected, hooks.Pre, before, stderr); hookErr != nil {
+		return hookReport, hookErr
 	}
+	recovery, err := beginUpdateRecovery(ctx, before.Profile, stderr)
+	if err != nil {
+		return before, err
+	}
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		// Cancellation must not prevent restoration of a partially changed profile.
+		restoreCtx := context.WithoutCancel(ctx)
+		if restoreErr := recovery.rollback(restoreCtx, stderr); restoreErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf(
+				"update recovery incomplete; further mutations require successful recovery: %w", restoreErr,
+			))
+		}
+		var inspectErr error
+		report, inspectErr = Inspect(restoreCtx, desired)
+		if inspectErr != nil {
+			report = Report{}
+			resultErr = errors.Join(resultErr, fmt.Errorf("inspect after update recovery: %w", inspectErr))
+		}
+	}()
 
 	_, operationErr := writeSource(source, system, retained, allowInit)
 	if operationErr == nil {
 		// #nosec G204 -- Fixed nix command; source is one path: argument, not an option or shell input.
 		cmd := exec.CommandContext(ctx, "nix", "flake", "update", "nixpkgs", "--flake", "path:"+source)
+		retainMutationLease(ctx, cmd)
 		cmd.Stdout, cmd.Stderr = stderr, stderr
-		if err := cmd.Run(); err != nil {
-			operationErr = fmt.Errorf("advance source lock: %w", err)
+		if advanceErr := cmd.Run(); advanceErr != nil {
+			operationErr = fmt.Errorf("advance source lock: %w", advanceErr)
 		}
 	}
 	if operationErr == nil && len(names) > 0 {
 		args := []string{"profile", "upgrade", "--profile", before.Profile, "--no-update-lock-file", "--"}
 		args = append(args, names...)
 		cmd := exec.CommandContext(ctx, "nix", args...)
+		retainMutationLease(ctx, cmd)
 		cmd.Stdout, cmd.Stderr = stderr, stderr
-		if err := cmd.Run(); err != nil {
-			operationErr = fmt.Errorf("upgrade desired native entries: %w", err)
+		if upgradeErr := cmd.Run(); upgradeErr != nil {
+			operationErr = fmt.Errorf("upgrade desired native entries: %w", upgradeErr)
 		}
 	}
 	if operationErr == nil {
@@ -112,22 +136,29 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (R
 	}
 	fmt.Fprintf(stderr, "Profile: %s; package store paths: %s.\n", profileState, packageState)
 	if operationErr != nil {
-		return after, fmt.Errorf("update failed; source/profile changes were not rolled back: %w", operationErr)
+		return after, fmt.Errorf("update failed: %w", operationErr)
 	}
 	updated := classify(Report{Entries: after.Entries}, selected)
 	for _, app := range updated.Applications {
 		if app.State != "installed" {
 			return after, fmt.Errorf(
-				"update finished but application %q is %s; inspect the profile before retrying",
+				"update finished but application %q is %s",
 				app.ID,
 				app.State,
 			)
 		}
 	}
 	if !reflect.DeepEqual(before.Extras, after.Extras) {
-		return after, fmt.Errorf("extras changed during update; inspect the profile before retrying")
+		return after, fmt.Errorf("extras changed during update")
 	}
-	return runHookPhase(ctx, desired, selected, hooks.Post, after, stderr)
+	after, err = runHookPhase(ctx, desired, selected, hooks.Post, after, stderr)
+	if err != nil {
+		return after, err
+	}
+	if err := recovery.commit(); err != nil {
+		return after, fmt.Errorf("commit update recovery point: %w", err)
+	}
+	return after, nil
 }
 
 // Applications are dependency-first, so a reverse pass propagates selection

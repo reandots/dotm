@@ -24,7 +24,7 @@ func runHookPhase(
 		return current, hookErr
 	}
 	if hookErr != nil && phase == hooks.Post {
-		hookErr = fmt.Errorf("post-hook failed; package and hook changes were not rolled back: %w", hookErr)
+		hookErr = fmt.Errorf("post-hook failed; arbitrary hook effects cannot be rolled back: %w", hookErr)
 	}
 	// Scope controls which hooks run; status must still describe every desired
 	// application, including independent missing applications outside update.
