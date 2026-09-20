@@ -25,6 +25,7 @@ type updateJournal struct {
 	Profile    string                    `json:"profile"`
 	Generation int                       `json:"generation"`
 	Target     string                    `json:"target"`
+	Source     string                    `json:"source,omitempty"`
 	Files      map[string]sourceSnapshot `json:"files"`
 }
 
@@ -91,9 +92,16 @@ func beginUpdateRecovery(ctx context.Context, profile string, stderr io.Writer) 
 		return nil, fmt.Errorf("resolve update profile directory: %w", err)
 	}
 	profile = filepath.Join(resolvedProfile, filepath.Base(profile))
-	source := filepath.Join(base, "dotm", "source")
+	state, err := readSourceState(base)
+	if err != nil {
+		return nil, fmt.Errorf("resolve update source: %w", err)
+	}
+	if state.Path == "" || !validSourcePath(base, state.Path) {
+		return nil, fmt.Errorf("cannot snapshot unidentified source: %s", state.Reason)
+	}
+	source := state.Path
 	j := updateJournal{
-		Version: 1, Profile: profile, Generation: h.current, Target: target,
+		Version: 2, Profile: profile, Generation: h.current, Target: target, Source: source,
 		Files: make(map[string]sourceSnapshot, 2),
 	}
 	for _, name := range []string{"flake.nix", "flake.lock"} {
@@ -165,29 +173,14 @@ func (r *updateRecovery) commit() error {
 		return fmt.Errorf("sync committed update state: %w", err)
 	}
 	source := filepath.Join(base, "dotm", "source")
-	for _, name := range []string{"flake.nix", "flake.lock"} {
-		p := filepath.Join(source, name)
-		info, fileErr := os.Lstat(p)
-		if fileErr != nil {
-			return fmt.Errorf("inspect committed source file: %w", fileErr)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("committed source file %s is not a regular file", name)
-		}
-		f, openErr := os.Open(p)
-		if openErr != nil {
-			return fmt.Errorf("open committed source file: %w", openErr)
-		}
-		syncErr, closeErr := f.Sync(), f.Close()
-		if syncErr != nil {
-			return fmt.Errorf("sync committed source file: %w", syncErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close committed source file: %w", closeErr)
+	if r.data.Version == 2 {
+		source = r.data.Source
+		if sourceErr := verifyJournalSource(base, r.data); sourceErr != nil {
+			return sourceErr
 		}
 	}
-	if syncErr := syncDirectory(source); syncErr != nil {
-		return fmt.Errorf("sync committed source directory: %w", syncErr)
+	if syncErr := syncSource(source); syncErr != nil {
+		return fmt.Errorf("sync committed source: %w", syncErr)
 	}
 	h, err := readHistory(r.data.Profile)
 	if err != nil {
@@ -250,8 +243,11 @@ func recoverJournal(ctx context.Context, path string, stderr io.Writer) error {
 }
 
 func validateJournal(j updateJournal, base string) error {
-	if j.Version != 1 || j.Generation <= 0 {
+	if (j.Version != 1 && j.Version != 2) || j.Generation <= 0 {
 		return fmt.Errorf("unsupported version or invalid native generation")
+	}
+	if err := verifyJournalSource(base, j); err != nil {
+		return err
 	}
 	if !filepath.IsAbs(j.Profile) || filepath.Clean(j.Profile) != j.Profile {
 		return fmt.Errorf("invalid profile path")
@@ -292,6 +288,32 @@ func validateJournal(j updateJournal, base string) error {
 		f, ok := j.Files[name]
 		if !ok || (!f.Present && len(f.Data) != 0) {
 			return fmt.Errorf("invalid snapshot for %s", name)
+		}
+	}
+	return nil
+}
+
+// A journal protects one concrete source, never whatever a replaced pointer
+// happens to select. Missing files can be restored; redirected ancestors cannot.
+func verifyJournalSource(base string, j updateJournal) error {
+	source := filepath.Join(base, "dotm", "source")
+	if j.Version == 2 {
+		source = j.Source
+	}
+	if !validSourcePath(base, source) {
+		return fmt.Errorf("invalid recorded source path")
+	}
+	resolved, err := canonicalStateHome(source)
+	if err != nil || resolved != source {
+		return fmt.Errorf("recorded source path no longer identifies its original location")
+	}
+	if j.Version == 2 {
+		state, readErr := readSourceState(base)
+		if readErr != nil {
+			return readErr
+		}
+		if state.Path != source {
+			return fmt.Errorf("current source identity changed; recovery snapshot retained")
 		}
 	}
 	return nil
@@ -343,9 +365,12 @@ func restoreJournal(ctx context.Context, path string, j updateJournal, stderr io
 		return fmt.Errorf("restored native target differs from snapshot (recovery snapshot retained)")
 	}
 	source := filepath.Join(base, "dotm", "source")
+	if j.Version == 2 {
+		source = j.Source
+	}
 	for _, name := range []string{"flake.nix", "flake.lock"} {
-		p := filepath.Join(source, name)
 		snap := j.Files[name]
+		p := filepath.Join(source, name)
 		info, statErr := os.Lstat(p)
 		if statErr == nil && !info.Mode().IsRegular() {
 			return fmt.Errorf("restore source %s: path is not a regular file (recovery snapshot retained)", name)

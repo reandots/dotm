@@ -32,7 +32,14 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 	if err != nil {
 		return before, err
 	}
-	source := filepath.Join(base, "dotm", "source")
+	state, err := readSourceState(base)
+	if err != nil {
+		return before, err
+	}
+	source := state.Path
+	if !state.Healthy {
+		source = ""
+	}
 	missing, retained, allowInit, err := installationPlan(before, desired, source)
 	if err != nil {
 		return before, err
@@ -50,7 +57,14 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 	if len(missing) == 0 {
 		return runHookPhase(ctx, desired, desired, hooks.Post, before, stderr)
 	}
-	operationErr := prepareSource(ctx, source, system, retained, allowInit, stderr)
+	var operationErr error
+	if state.Healthy {
+		operationErr = prepareSource(ctx, source, system, retained, allowInit, stderr)
+	} else {
+		fmt.Fprintf(stderr, "Source recovery: %s; existing entries are external. "+
+			"Installing all desired packages from current nixos-unstable in a new source.\n", state.Reason)
+		source, operationErr = freshSource(ctx, base, system, desired.Packages, stderr)
+	}
 	if operationErr == nil {
 		operationErr = addPackages(ctx, before.Profile, source, system, missing, stderr)
 	}
@@ -146,7 +160,9 @@ func addPackages(
 	retainMutationLease(ctx, cmd)
 	cmd.Stdout, cmd.Stderr = stderr, stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("nix profile add --profile %s: %w", profile, err)
+		return fmt.Errorf("nix profile add --profile %s: %w; existing entries were preserved; "+
+			"if Nix reports a file conflict, explicitly remove the conflicting external entries and retry",
+			profile, err)
 	}
 	return nil
 }

@@ -39,7 +39,11 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	if err != nil {
 		return before, err
 	}
-	source := filepath.Join(base, "dotm", "source")
+	state, err := readSourceState(base)
+	if err != nil {
+		return before, err
+	}
+	source := state.Path
 	missing, retained, allowInit, err := installationPlan(before, selected, source)
 	if err != nil {
 		return before, err

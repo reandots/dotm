@@ -19,6 +19,18 @@ type UpdateRecoverySuite struct{ suite.Suite }
 
 func TestUpdateRecoverySuite(t *testing.T) { suite.Run(t, new(UpdateRecoverySuite)) }
 
+const recoveryOriginalLock = `{"version":7,"root":"root","nodes":{"root":{"inputs":{"nixpkgs":"nixpkgs"}},` +
+	`"nixpkgs":{"locked":{"type":"github","owner":"NixOS","repo":"nixpkgs",` +
+	`"rev":"0000000000000000000000000000000000000000","narHash":"sha256-original"}}}}`
+
+const recoveryAdvancedLock = `{"version":7,"root":"root","nodes":{"root":{"inputs":{"nixpkgs":"nixpkgs"}},` +
+	`"nixpkgs":{"locked":{"type":"github","owner":"NixOS","repo":"nixpkgs",` +
+	`"rev":"1111111111111111111111111111111111111111","narHash":"sha256-advanced"}}}}`
+
+func recoveryOriginalFlake() string {
+	return renderSource("x86_64-linux", []manifest.Package{{Attr: "hello"}})
+}
+
 func (s *UpdateRecoverySuite) fixture() (string, string, string) {
 	s.T().Helper()
 	root := s.T().TempDir()
@@ -45,6 +57,7 @@ func (s *UpdateRecoverySuite) fixture() (string, string, string) {
 	s.T().Setenv("FAIL_UPGRADE", "")
 	s.T().Setenv("FAIL_ADD", "")
 	s.T().Setenv("FAIL_ROLLBACK", "")
+	s.T().Setenv("ADVANCED_LOCK", recoveryAdvancedLock)
 	nix := `#!/bin/sh
 if [ "$1" = profile ] && [ "$2" = rollback ]; then
   if [ -e "$FAIL_ROLLBACK" ]; then exit 17; fi
@@ -63,7 +76,7 @@ if [ "$1" = profile ] && [ "$2" = list ]; then
 fi
 if [ "$1" = flake ] && [ "$2" = update ]; then
   echo advance-started >&2
-  printf 'advanced lock\n' > "$FAKE_LOCK"
+  printf '%s' "$ADVANCED_LOCK" > "$FAKE_LOCK"
   if [ -n "$FAIL_ADVANCE" ]; then exit 18; fi
   exit 0
 fi
@@ -88,8 +101,8 @@ exit 0
 func (s *UpdateRecoverySuite) begin(profile, source string) *updateRecovery {
 	s.T().Helper()
 	s.Require().NoError(os.MkdirAll(source, 0o700))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte("original flake\n"), 0o600))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte("original lock\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte(recoveryOriginalFlake()), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte(recoveryOriginalLock), 0o600))
 	r, err := beginUpdateRecovery(context.Background(), profile, io.Discard)
 	s.Require().NoError(err)
 	return r
@@ -98,14 +111,16 @@ func (s *UpdateRecoverySuite) begin(profile, source string) *updateRecovery {
 func (s *UpdateRecoverySuite) mutate(source, profile string) {
 	s.T().Helper()
 	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte("advanced flake\n"), 0o600))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte("advanced lock\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte(recoveryAdvancedLock), 0o600))
 	s.Require().NoError(os.Remove(profile))
 	s.Require().NoError(os.Symlink("profile-2-link", profile))
 }
 
 func (s *UpdateRecoverySuite) assertOriginal(source, profile string) {
 	s.T().Helper()
-	for name, want := range map[string]string{"flake.nix": "original flake\n", "flake.lock": "original lock\n"} {
+	for name, want := range map[string]string{
+		"flake.nix": recoveryOriginalFlake(), "flake.lock": recoveryOriginalLock,
+	} {
 		got, err := os.ReadFile(filepath.Join(source, name))
 		s.Require().NoError(err)
 		s.Equal(want, string(got))
@@ -160,14 +175,14 @@ func (s *UpdateRecoverySuite) TestPendingJournalRestoresBeforeOperationAndRetryA
 func (s *UpdateRecoverySuite) TestRollbackRestoresAbsentSourceFileAsAbsent() {
 	_, profile, source := s.fixture()
 	s.Require().NoError(os.MkdirAll(source, 0o700))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte("original flake\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte(recoveryOriginalFlake()), 0o600))
 	r, err := beginUpdateRecovery(context.Background(), profile, io.Discard)
 	s.Require().NoError(err)
 	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte("new lock\n"), 0o600))
 	s.Require().NoError(r.rollback(context.Background(), io.Discard))
 	_, err = os.Lstat(filepath.Join(source, "flake.lock"))
 	s.ErrorIs(err, os.ErrNotExist)
-	s.Equal("original flake\n", mustRead(s.T(), filepath.Join(source, "flake.nix")))
+	s.Equal(recoveryOriginalFlake(), mustRead(s.T(), filepath.Join(source, "flake.nix")))
 }
 
 func (s *UpdateRecoverySuite) TestCorruptJournalFailsClosed() {
@@ -187,8 +202,8 @@ func (s *UpdateRecoverySuite) TestCorruptJournalFailsClosed() {
 func (s *UpdateRecoverySuite) updateFixture(extraMissing bool) (string, string, string, manifest.Resolved) {
 	state, profile, source := s.fixture()
 	s.Require().NoError(os.MkdirAll(source, 0o700))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte("original flake\n"), 0o600))
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte("original lock\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte(recoveryOriginalFlake()), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.lock"), []byte(recoveryOriginalLock), 0o600))
 	for _, n := range []int{1, 2} {
 		entry := map[string]any{
 			"hello": map[string]any{
@@ -260,7 +275,7 @@ func (s *UpdateRecoverySuite) TestSuccessfulUpdateCommitsRecoverySnapshot() {
 	link, err := os.Readlink(profile)
 	s.Require().NoError(err)
 	s.Equal("profile-2-link", link)
-	s.Equal("advanced lock\n", mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	s.Equal(recoveryAdvancedLock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
 	s.assertJournalCleared(state)
 }
 
@@ -329,7 +344,7 @@ func (s *UpdateRecoverySuite) TestDryRunDoesNotRecoverInterruptedUpdate() {
 	err := Clean(context.Background(), CleanOptions{Keep: 10, DryRun: true}, nil, &out, io.Discard)
 	s.Require().NoError(err)
 	s.Contains(out.String(), "Current generation: 2")
-	s.Equal("advanced lock\n", mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	s.Equal(recoveryAdvancedLock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
 	s.FileExists(filepath.Join(state, "dotm", "update-recovery.json"))
 }
 
@@ -338,7 +353,7 @@ func (s *UpdateRecoverySuite) TestRepeatedRestorationAfterPartialSourceRestore()
 	r := s.begin(profile, source)
 	s.mutate(source, profile)
 	// Model a crash after restoring just one file, with the journal still pending.
-	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte("original flake\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(source, "flake.nix"), []byte(recoveryOriginalFlake()), 0o600))
 	s.Require().NoError(r.rollback(context.Background(), io.Discard))
 	s.assertOriginal(source, profile)
 }

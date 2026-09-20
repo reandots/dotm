@@ -144,7 +144,15 @@ func Inspect(ctx context.Context, desired manifest.Resolved) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	entries, err := parseEntries(out, system, filepath.Join(base, "dotm", "source"))
+	state, err := readSourceState(base)
+	if err != nil {
+		return Report{}, err
+	}
+	source := state.Path
+	if !state.Healthy {
+		source = ""
+	}
+	entries, err := parseEntries(out, system, source)
 	if err != nil {
 		return Report{}, err
 	}
@@ -249,6 +257,9 @@ func isNixpkgs(ref string) bool {
 }
 
 func identify(e Entry, system, source string) string {
+	if source == "" {
+		return ""
+	}
 	// Native all-output selection has no equivalent in the catalog grammar.
 	if len(e.Outputs) == 1 && e.Outputs[0] == "*" {
 		return ""
@@ -267,6 +278,11 @@ func identify(e Entry, system, source string) string {
 			return ""
 		}
 		return p.Key()
+	}
+	// Direct nixpkgs recipes remain recognizable only in an intact legacy
+	// environment. A fresh instance never adopts entries from other sources.
+	if filepath.Base(source) != "source" {
+		return ""
 	}
 	prefix = "legacyPackages." + system + "."
 	if strings.HasPrefix(e.AttrPath, prefix) && isNixpkgs(e.OriginalURL) && isNixpkgs(e.URL) {

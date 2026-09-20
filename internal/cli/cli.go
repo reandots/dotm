@@ -257,7 +257,7 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 		}
 		descriptor := entry.Descriptor
 		if descriptor == "" {
-			descriptor = "unknown"
+			descriptor = "external"
 		}
 		outputs := "(not recorded)"
 		if len(entry.Outputs) > 0 {

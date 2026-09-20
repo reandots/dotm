@@ -32,6 +32,7 @@ func prepareSource(
 	if !hasLock {
 		// #nosec G204 -- Fixed nix command; source is one path: argument, not an option or shell input.
 		cmd := exec.CommandContext(ctx, "nix", "flake", "lock", "path:"+source)
+		retainMutationLease(ctx, cmd)
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("initialize source lock: %w", err)

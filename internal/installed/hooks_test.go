@@ -71,8 +71,6 @@ func (s *HookOperationSuite) TestPackageFailureSuppressesEveryPostHook() {
 	log, readErr := os.ReadFile(filepath.Join(dir, "hook.log"))
 	s.Require().NoError(readErr)
 	s.Equal("dependency\nparent\n", string(log))
-	_, statErr := os.Stat(filepath.Join(dir, "state", "dotm", "source", "flake.nix"))
-	s.NoError(statErr, "source writing precedes the failed native lock command")
 	s.Require().Len(report.Applications, 2)
 	s.Equal("missing", report.Applications[0].State)
 	s.Equal("missing", report.Applications[1].State)
