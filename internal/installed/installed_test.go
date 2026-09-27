@@ -307,3 +307,34 @@ func (s *InstalledSuite) TestRejectNonProfileLocations() {
 		})
 	}
 }
+
+func (s *InstalledSuite) TestPackageFreeAndDependencyReadiness() {
+	desired := manifest.Resolved{Applications: []manifest.Application{
+		{ID: "shared", Packages: []manifest.Package{{Attr: "foo"}}},
+		{ID: "partial", Packages: []manifest.Package{{Attr: "foo"}, {Attr: "bar"}}},
+		{ID: "ambiguous", Packages: []manifest.Package{{Attr: "baz"}}},
+		{ID: "missing", Packages: []manifest.Package{{Attr: "absent"}}},
+		{ID: "aggregator", Dependencies: []string{"partial", "shared", "missing"}},
+		{ID: "config-only"},
+	}}
+	r := classify(Report{Entries: []Entry{
+		{Name: "foo-entry", Active: true, Descriptor: "foo"},
+		{Name: "baz-one", Active: true, Descriptor: "baz"},
+		{Name: "baz-two", Active: true, Descriptor: "baz"},
+	}}, desired)
+	s.Equal("installed", r.Applications[0].State)
+	s.True(r.Applications[0].Ready, "a shared active descriptor satisfies the package requirement")
+	s.Equal("partial", r.Applications[1].State)
+	s.False(r.Applications[1].Ready)
+	s.Equal([]string{"bar"}, r.Applications[1].BlockedBy)
+	s.Equal("ambiguous", r.Applications[2].Packages[0].State)
+	s.False(r.Applications[2].Ready)
+	s.Equal("missing", r.Applications[3].State)
+	s.False(r.Applications[3].Ready)
+	s.Equal([]string{"absent"}, r.Applications[3].BlockedBy)
+	s.Equal("package-free", r.Applications[4].State)
+	s.False(r.Applications[4].Ready)
+	s.Equal([]string{"partial", "missing"}, r.Applications[4].BlockedBy)
+	s.Equal("package-free", r.Applications[5].State)
+	s.True(r.Applications[5].Ready)
+}

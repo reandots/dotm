@@ -144,7 +144,7 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	}
 	updated := classify(Report{Entries: after.Entries}, selected)
 	for _, app := range updated.Applications {
-		if app.State != "installed" {
+		if !app.Ready {
 			return after, fmt.Errorf(
 				"update finished but application %q is %s",
 				app.ID,
@@ -154,10 +154,6 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	}
 	if !reflect.DeepEqual(before.Extras, after.Extras) {
 		return after, fmt.Errorf("extras changed during update")
-	}
-	after, err = runHookPhase(ctx, desired, selected, hooks.Post, after, stderr)
-	if err != nil {
-		return after, err
 	}
 	if err := recovery.commit(); err != nil {
 		return after, fmt.Errorf("commit update recovery point: %w", err)
@@ -170,8 +166,11 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 func updateSelection(before Report, desired manifest.Resolved) manifest.Resolved {
 	included := make(map[string]bool, len(before.Applications))
 	for _, app := range before.Applications {
-		if app.State != "missing" {
-			included[app.ID] = true
+		for _, pkg := range app.Packages {
+			if pkg.State != "missing" {
+				included[app.ID] = true
+				break
+			}
 		}
 	}
 	for i := len(desired.Applications) - 1; i >= 0; i-- {

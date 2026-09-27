@@ -11,12 +11,20 @@ type Resolved struct {
 	Applications []Application
 	Packages     []Package
 	CatalogDir   string
+	// Targets deduplicate identical paths, retaining every owner and directory/file overlap.
+	Targets []ConfigTarget
+}
+
+type ConfigTarget struct {
+	Path         string
+	Applications []string
 }
 
 func (d *Data) Resolve(roots []string) (Resolved, error) {
 	result := Resolved{CatalogDir: d.CatalogDir}
 	states := make(map[string]uint8)
 	packages := make(map[string]bool)
+	targets := make(map[string]int)
 	var stack []string
 	var visit func(string) error
 	visit = func(id string) error {
@@ -47,6 +55,14 @@ func (d *Data) Resolve(roots []string) (Resolved, error) {
 		stack = stack[:len(stack)-1]
 		states[id] = 2
 		result.Applications = append(result.Applications, app)
+		for _, path := range app.Configs {
+			if i, exists := targets[path]; exists {
+				result.Targets[i].Applications = append(result.Targets[i].Applications, app.ID)
+			} else {
+				targets[path] = len(result.Targets)
+				result.Targets = append(result.Targets, ConfigTarget{Path: path, Applications: []string{app.ID}})
+			}
+		}
 		for _, p := range app.Packages {
 			if !packages[p.Key()] {
 				packages[p.Key()] = true

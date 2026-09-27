@@ -252,22 +252,6 @@ func (s *UpdateRecoverySuite) TestUpgradeThenAddFailureRestoresInitialState() {
 	s.assertJournalCleared(state)
 }
 
-func (s *UpdateRecoverySuite) TestPostHookFailureRestoresPackagesAndSourceButKeepsHookData() {
-	state, profile, source, desired := s.updateFixture(false)
-	marker := filepath.Join(state, "hook-effect")
-	hook := filepath.Join(state, "post-hook")
-	// #nosec G306 -- Executable fixture is private and only used by this test.
-	s.Require().NoError(os.WriteFile(hook, []byte("#!/bin/sh\nprintf 'kept\\n' > \"$HOOK_MARKER\"\nexit 9\n"), 0o700))
-	s.T().Setenv("HOOK_MARKER", marker)
-	desired.CatalogDir = state
-	desired.Applications[0].PostHook = filepath.Base(hook)
-	_, err := Update(context.Background(), desired, io.Discard)
-	s.Error(err)
-	s.assertOriginal(source, profile)
-	s.Equal("kept\n", mustRead(s.T(), marker))
-	s.assertJournalCleared(state)
-}
-
 func (s *UpdateRecoverySuite) TestSuccessfulUpdateCommitsRecoverySnapshot() {
 	state, profile, source, desired := s.updateFixture(false)
 	_, err := Update(context.Background(), desired, io.Discard)

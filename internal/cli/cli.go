@@ -22,9 +22,9 @@ type cli struct {
 	// Kong requires a terminal command; this hidden default enables flag-only invocations.
 	Operations   struct{}        `cmd:"" default:"1" hidden:""`
 	Configs      configsCmd      `cmd:"" help:"List available configurations and their selected applications"`
-	Apps         appsCmd         `cmd:"" help:"List catalog applications, logical dependencies and packages"`
-	Show         showCmd         `cmd:"" help:"Show the local selection and its resolved applications/packages"`
-	Status       statusCmd       `cmd:"" help:"Compare desired applications with the installed Nix profile"`
+	Apps         appsCmd         `cmd:"" help:"List catalog applications, dependencies, packages, configuration targets and hook paths"`
+	Show         showCmd         `cmd:"" help:"Show the local selection and resolved applications, packages and owned configuration targets"`
+	Status       statusCmd       `cmd:"" help:"Inspect the Nix profile and configuration readiness from current package requirements"`
 	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
@@ -127,8 +127,12 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 			if app.PreHook != "" {
 				fmt.Fprintf(out, "  pre_hook: %s\n", app.PreHook)
 			}
-			if app.PostHook != "" {
-				fmt.Fprintf(out, "  post_hook: %s\n", app.PostHook)
+			fmt.Fprintf(out, "  configs: %s\n", list(app.Configs))
+			if app.PreCfgHook != "" {
+				fmt.Fprintf(out, "  pre_cfg_hook: %s\n", app.PreCfgHook)
+			}
+			if app.PostCfgHook != "" {
+				fmt.Fprintf(out, "  post_cfg_hook: %s\n", app.PostCfgHook)
 			}
 		}
 	case "show", "status", "install", "update", "remove-extras", "operations":
@@ -184,6 +188,16 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 		for _, p := range resolved.Packages {
 			fmt.Fprintf(out, "  %s\n", p.Key())
 		}
+		fmt.Fprintln(out, "Configuration targets (owners):")
+		if len(resolved.Targets) == 0 {
+			fmt.Fprintln(out, "  (none)")
+		}
+		for _, target := range resolved.Targets {
+			fmt.Fprintf(out, "  %s: %s\n", target.Path, list(target.Applications))
+		}
+		if config.Configs != nil {
+			fmt.Fprintf(out, "Configuration source: %s %s\n", config.Configs.Backend, config.Configs.Repository)
+		}
 	}
 	return nil
 }
@@ -238,6 +252,11 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 	}
 	for _, app := range report.Applications {
 		fmt.Fprintf(out, "  %s [%s]\n", app.ID, app.State)
+		readiness := "ready"
+		if !app.Ready {
+			readiness = "blocked by " + list(app.BlockedBy)
+		}
+		fmt.Fprintf(out, "    configuration readiness: %s\n", readiness)
 		for _, pkg := range app.Packages {
 			fmt.Fprintf(out, "    %s [%s]: %s\n", pkg.Descriptor, pkg.State, list(pkg.Entries))
 		}

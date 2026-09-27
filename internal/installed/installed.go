@@ -27,9 +27,11 @@ type Report struct {
 }
 
 type ApplicationStatus struct {
-	ID       string
-	State    string
-	Packages []PackageStatus
+	ID        string
+	State     string
+	Packages  []PackageStatus
+	Ready     bool
+	BlockedBy []string
 }
 
 type PackageStatus struct {
@@ -343,13 +345,33 @@ func classify(r Report, desired manifest.Resolved) Report {
 			}
 			as.Packages = append(as.Packages, ps)
 		}
-		if complete != len(app.Packages) {
+		if len(app.Packages) == 0 {
+			as.State = "package-free"
+		} else if complete != len(app.Packages) {
 			as.State = "missing"
 			if evidence {
 				as.State = "partial"
 			}
 		}
+		for _, pkg := range as.Packages {
+			if pkg.State != "installed" {
+				as.BlockedBy = append(as.BlockedBy, pkg.Descriptor)
+			}
+		}
 		r.Applications = append(r.Applications, as)
+	}
+	status := make(map[string]*ApplicationStatus, len(r.Applications))
+	for i := range r.Applications {
+		status[r.Applications[i].ID] = &r.Applications[i]
+	}
+	for i := range r.Applications {
+		as := &r.Applications[i]
+		for _, dep := range desired.Applications[i].Dependencies {
+			if ds := status[dep]; ds != nil && !ds.Ready {
+				as.BlockedBy = append(as.BlockedBy, dep)
+			}
+		}
+		as.Ready = len(as.BlockedBy) == 0
 	}
 	for _, e := range r.Entries {
 		if !e.Active || e.Descriptor == "" || !wanted[e.Descriptor] {

@@ -138,6 +138,20 @@ func (s *UpdateSuite) TestEmptyDesiredSetLeavesAbsentEnvironmentUntouched() {
 	s.ErrorIs(err, os.ErrNotExist)
 }
 
+func (s *UpdateSuite) TestPackageFreeAggregatorDoesNotSelectMissingDependency() {
+	desired := manifest.Resolved{
+		Applications: []manifest.Application{
+			{ID: "missing", Packages: []manifest.Package{{Attr: "hello"}}},
+			{ID: "aggregator", Dependencies: []string{"missing"}},
+		},
+		Packages: []manifest.Package{{Attr: "hello"}},
+	}
+	before := classify(Report{}, desired)
+	selected := updateSelection(before, desired)
+	s.Empty(selected.Applications)
+	s.Empty(selected.Packages)
+}
+
 func (s *UpdateSuite) TestNewDesiredApplicationsLeaveAbsentEnvironmentUntouched() {
 	base := filepath.Join(s.T().TempDir(), "state")
 	s.T().Setenv("XDG_STATE_HOME", base)

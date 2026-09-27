@@ -72,8 +72,6 @@ func (s *ManifestSuite) TestInvalidManifests() {
 		{"misspelled field", app + "dependencis = []\n", config},
 		{"wrong application type", "a = 42\n", config},
 		{"malformed TOML", "[a\n", config},
-		{"missing nix", "[a]\n", config},
-		{"empty nix", "[a]\nnix = []\n", config},
 		{"unsafe attr", "[a]\nnix = ['a; abort']\n", config},
 		{"duplicate output", "[a]\nnix = [{attr = 'a', outputs = ['out', 'out']}]\n", config},
 		{"duplicate descriptor across forms", "[a]\nnix = ['a', {attr = 'a'}]\n", config},
@@ -89,7 +87,23 @@ func (s *ManifestSuite) TestInvalidManifests() {
 		{"legacy array catalog", "[[apps]]\nid = 'a'\npackages = [{attr = 'a'}]\n", config},
 		{"legacy packages field", "[a]\npackages = ['a']\n", config},
 		{"empty pre hook", app + "pre_hook = ''\n", config},
-		{"nonstring post hook", app + "post_hook = ['script']\n", config},
+		{"legacy post hook", app + "post_hook = 'script'\n", config},
+		{"nonstring config hook", app + "pre_cfg_hook = ['script']\n", config},
+		{"empty config hook", app + "post_cfg_hook = ''\n", config},
+		{"unknown post app hook", app + "post_app_hook = 'script'\n", config},
+		{"wrong configs type", app + "configs = '/tmp/config'\n", config},
+		{"wrong config target type", app + "configs = [42]\n", config},
+		{"relative config target", app + "configs = ['relative']\n", config},
+		{"targets without source", app + "configs = ['/tmp/config']\n", config},
+		{"unknown source backend", app, config + "[configurations.configs]\nbackend = 'other'\nrepository = 'repo'\n"},
+		{"missing source repository", app, config + "[configurations.configs]\nbackend = 'chezmoi'\n"},
+		{"wrong source type", app, config + "configs = 'repo'\n"},
+		{"wrong repository type", app, config + "[configurations.configs]\nbackend = 'chezmoi'\nrepository = 42\n"},
+		{
+			"unknown source key",
+			app,
+			config + "[configurations.configs]\nbackend = 'chezmoi'\nrepository = 'r'\nextra = 1\n",
+		},
 		{"shell command hook table", app + "pre_hook = {command = 'echo hi'}\n", config},
 	}
 	for _, tt := range tests {
@@ -108,4 +122,65 @@ func (s *ManifestSuite) TestEmptyConfigurationAndCatalog() {
 	s.Require().NoError(err)
 	s.Empty(result.Applications)
 	s.Empty(result.Packages)
+}
+
+func (s *ManifestSuite) TestPackageFreeClosureAndTargetOwnership() {
+	s.T().Setenv("HOME", "/home/model-test")
+	s.T().Setenv("XDG_CONFIG_HOME", "")
+	d, err := Load(s.fixture(`
+[root]
+dependencies = ["left", "right"]
+configs = ["$XDG_CONFIG_HOME/tool/", "${HOME}/.config/tool"]
+pre_cfg_hook = "hooks/prepare"
+post_cfg_hook = "hooks/finish"
+[left]
+dependencies = ["shared"]
+nix = []
+configs = ["~/.config/tool/file with spaces"]
+[right]
+dependencies = ["shared"]
+configs = ["~/.config/tool"]
+[shared]
+nix = ["hello"]
+`, `[[configurations]]
+name = "machine"
+apps = ["root", "shared"]
+[configurations.configs]
+backend = "chezmoi"
+repository = "https://example.invalid/dotfiles.git"
+`))
+	s.Require().NoError(err)
+	config := d.Configs["machine"]
+	s.Equal("chezmoi", config.Configs.Backend)
+	s.Equal("https://example.invalid/dotfiles.git", config.Configs.Repository)
+	resolved, err := d.Resolve(config.Apps)
+	s.Require().NoError(err)
+	var ids []string
+	for _, app := range resolved.Applications {
+		ids = append(ids, app.ID)
+	}
+	s.Equal([]string{"shared", "left", "right", "root"}, ids)
+	s.Equal([]Package{{Attr: "hello"}}, resolved.Packages)
+	s.Empty(d.Apps["root"].Packages)
+	s.Empty(d.Apps["left"].Packages)
+	s.Equal("hooks/prepare", d.Apps["root"].PreCfgHook)
+	s.Equal("hooks/finish", d.Apps["root"].PostCfgHook)
+	s.Equal([]ConfigTarget{
+		{Path: "/home/model-test/.config/tool/file with spaces", Applications: []string{"left"}},
+		{Path: "/home/model-test/.config/tool", Applications: []string{"right", "root"}},
+	}, resolved.Targets)
+}
+
+func (s *ManifestSuite) TestSourceValidationIncludesUnselectedConfigurations() {
+	_, err := Load(s.fixture("[a]\nconfigs = ['/tmp/tool']\n", `
+[[configurations]]
+name = "empty"
+apps = []
+[[configurations]]
+name = "unselected"
+apps = ["a"]
+`))
+	s.Require().Error(err)
+	s.Contains(err.Error(), `configuration "unselected"`)
+	s.Contains(err.Error(), "source settings")
 }

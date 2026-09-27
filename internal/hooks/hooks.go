@@ -15,8 +15,9 @@ import (
 type Phase string
 
 const (
-	Pre  Phase = "pre_hook"
-	Post Phase = "post_hook"
+	Pre     Phase = "pre_hook"
+	PreCfg  Phase = "pre_cfg_hook"
+	PostCfg Phase = "post_cfg_hook"
 )
 
 // Run executes configured hooks sequentially in resolved application order.
@@ -26,9 +27,16 @@ func Run(ctx context.Context, desired manifest.Resolved, phase Phase, profile st
 	configured := false
 	var env []string
 	for _, app := range desired.Applications {
-		value := app.PreHook
-		if phase == Post {
-			value = app.PostHook
+		var value string
+		switch phase {
+		case Pre:
+			value = app.PreHook
+		case PreCfg:
+			value = app.PreCfgHook
+		case PostCfg:
+			value = app.PostCfgHook
+		default:
+			return configured, fmt.Errorf("unknown hook phase %q", phase)
 		}
 		if value == "" {
 			continue

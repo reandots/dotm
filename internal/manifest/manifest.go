@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"dotm/internal/pathutil"
+
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -23,12 +25,20 @@ type Application struct {
 	Dependencies []string
 	Packages     []Package
 	PreHook      string
-	PostHook     string
+	Configs      []string
+	PreCfgHook   string
+	PostCfgHook  string
 }
 
 type Configuration struct {
-	Name string   `toml:"name"`
-	Apps []string `toml:"apps"`
+	Name    string               `toml:"name"`
+	Apps    []string             `toml:"apps"`
+	Configs *ConfigurationSource `toml:"configs"`
+}
+
+type ConfigurationSource struct {
+	Backend    string `toml:"backend"`
+	Repository string `toml:"repository"`
 }
 
 type Data struct {
@@ -62,8 +72,10 @@ func Load(dir string) (*Data, error) {
 	var catalog map[string]struct {
 		Dependencies []string `toml:"dependencies"`
 		Nix          []any    `toml:"nix"`
+		Configs      []string `toml:"configs"`
 		PreHook      *string  `toml:"pre_hook"`
-		PostHook     *string  `toml:"post_hook"`
+		PreCfgHook   *string  `toml:"pre_cfg_hook"`
+		PostCfgHook  *string  `toml:"post_cfg_hook"`
 	}
 	catalogPath := filepath.Join(dir, "catalog.toml")
 	if err := decode(catalogPath, &catalog); err != nil {
@@ -80,9 +92,6 @@ func Load(dir string) (*Data, error) {
 			return nil, fmt.Errorf("%s: invalid application ID %q", catalogPath, id)
 		}
 		raw := catalog[id]
-		if len(raw.Nix) == 0 {
-			return nil, fmt.Errorf("%s: application %q needs at least one nix package", catalogPath, id)
-		}
 		app := Application{ID: id, Dependencies: raw.Dependencies, Packages: make([]Package, 0, len(raw.Nix))}
 		for _, hook := range []struct {
 			name   string
@@ -90,7 +99,8 @@ func Load(dir string) (*Data, error) {
 			target *string
 		}{
 			{"pre_hook", raw.PreHook, &app.PreHook},
-			{"post_hook", raw.PostHook, &app.PostHook},
+			{"pre_cfg_hook", raw.PreCfgHook, &app.PreCfgHook},
+			{"post_cfg_hook", raw.PostCfgHook, &app.PostCfgHook},
 		} {
 			if hook.value != nil {
 				if *hook.value == "" {
@@ -100,6 +110,17 @@ func Load(dir string) (*Data, error) {
 					)
 				}
 				*hook.target = *hook.value
+			}
+		}
+		targets := make(map[string]bool, len(raw.Configs))
+		for _, value := range raw.Configs {
+			target, err := pathutil.Target(value)
+			if err != nil {
+				return nil, fmt.Errorf("%s: application %q: config target %q: %w", catalogPath, id, value, err)
+			}
+			if !targets[target] {
+				targets[target] = true
+				app.Configs = append(app.Configs, target)
 			}
 		}
 		packages := make(map[string]bool)
@@ -156,6 +177,20 @@ func Load(dir string) (*Data, error) {
 		}
 		if err := checkReferences("configuration "+config.Name, config.Apps, d.Apps); err != nil {
 			return nil, fmt.Errorf("%s: %w", configPath, err)
+		}
+		if config.Configs != nil {
+			if config.Configs.Backend != "chezmoi" || strings.TrimSpace(config.Configs.Repository) == "" {
+				return nil, fmt.Errorf("%s: configuration %q: configs requires backend 'chezmoi' and a repository",
+					configPath, config.Name)
+			}
+		}
+		resolved, err := d.Resolve(config.Apps)
+		if err != nil {
+			return nil, fmt.Errorf("%s: configuration %q: %w", configPath, config.Name, err)
+		}
+		if len(resolved.Targets) > 0 && config.Configs == nil {
+			return nil, fmt.Errorf("%s: configuration %q: config targets require configs source settings",
+				configPath, config.Name)
 		}
 		d.Configs[config.Name] = config
 	}

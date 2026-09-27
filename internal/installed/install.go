@@ -55,7 +55,7 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 		return report, err
 	}
 	if len(missing) == 0 {
-		return runHookPhase(ctx, desired, desired, hooks.Post, before, stderr)
+		return before, nil
 	}
 	var operationErr error
 	if state.Healthy {
@@ -76,7 +76,7 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 		return after, operationErr
 	}
 	for _, app := range after.Applications {
-		if app.State != "installed" {
+		if !app.Ready {
 			return after, fmt.Errorf(
 				"install finished but application %q is %s; inspect the profile before retrying",
 				app.ID,
@@ -84,7 +84,7 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 			)
 		}
 	}
-	return runHookPhase(ctx, desired, desired, hooks.Post, after, stderr)
+	return after, nil
 }
 
 func installationPlan(
