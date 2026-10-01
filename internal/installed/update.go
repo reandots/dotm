@@ -19,8 +19,16 @@ import (
 // Update advances the source and completes installed desired applications,
 // including their current dependencies. Wholly absent independent applications
 // and extras are left alone. A durable snapshot restores the original package
-// and source state on failure; arbitrary hook effects cannot be restored.
-func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (report Report, resultErr error) {
+// and source state on package failure; configuration effects cannot be restored.
+func Update(
+	ctx context.Context,
+	desired manifest.Resolved,
+	stderr io.Writer,
+	options ConfigurationOptions,
+) (report Report, resultErr error) {
+	output := &operationOutput{Writer: stderr}
+	stderr = output
+	defer finishOperation(&report, &resultErr, output)
 	ctx, release, err := beginOperation(ctx, stderr)
 	if err != nil {
 		return Report{}, err
@@ -33,7 +41,7 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	selected := updateSelection(before, desired)
 	if len(selected.Packages) == 0 {
 		fmt.Fprintln(stderr, "Update: no installed desired applications; source and profile unchanged.")
-		return before, nil
+		return configure(ctx, desired, before, stderr, options)
 	}
 	base, err := stateHome()
 	if err != nil {
@@ -62,28 +70,29 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 		return before, fmt.Errorf("read source lock before update: %w", err)
 	}
 	if hookReport, hookErr := runHookPhase(ctx, desired, selected, hooks.Pre, before, stderr); hookErr != nil {
-		return hookReport, hookErr
+		return hookReport, operationError(SeverityInstallation, hookErr)
 	}
 	recovery, err := beginUpdateRecovery(ctx, before.Profile, stderr)
 	if err != nil {
 		return before, err
 	}
 	defer func() {
-		if resultErr == nil {
+		if resultErr == nil || recovery.finalized {
 			return
 		}
 		// Cancellation must not prevent restoration of a partially changed profile.
 		restoreCtx := context.WithoutCancel(ctx)
 		if restoreErr := recovery.rollback(restoreCtx, stderr); restoreErr != nil {
-			resultErr = errors.Join(resultErr, fmt.Errorf(
+			resultErr = operationError(SeverityInternal, errors.Join(resultErr, fmt.Errorf(
 				"update recovery incomplete; further mutations require successful recovery: %w", restoreErr,
-			))
+			)))
 		}
 		var inspectErr error
 		report, inspectErr = Inspect(restoreCtx, desired)
 		if inspectErr != nil {
 			report = Report{}
-			resultErr = errors.Join(resultErr, fmt.Errorf("inspect after update recovery: %w", inspectErr))
+			resultErr = operationError(SeverityInternal,
+				errors.Join(resultErr, fmt.Errorf("inspect after update recovery: %w", inspectErr)))
 		}
 	}()
 
@@ -140,16 +149,16 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	}
 	fmt.Fprintf(stderr, "Profile: %s; package store paths: %s.\n", profileState, packageState)
 	if operationErr != nil {
-		return after, fmt.Errorf("update failed: %w", operationErr)
+		return after, operationError(SeverityInstallation, fmt.Errorf("update failed: %w", operationErr))
 	}
 	updated := classify(Report{Entries: after.Entries}, selected)
 	for _, app := range updated.Applications {
 		if !app.Ready {
-			return after, fmt.Errorf(
+			return after, operationError(SeverityInstallation, fmt.Errorf(
 				"update finished but application %q is %s",
 				app.ID,
 				app.State,
-			)
+			))
 		}
 	}
 	if !reflect.DeepEqual(before.Extras, after.Extras) {
@@ -158,7 +167,7 @@ func Update(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (r
 	if err := recovery.commit(); err != nil {
 		return after, fmt.Errorf("commit update recovery point: %w", err)
 	}
-	return after, nil
+	return configure(ctx, desired, after, stderr, options)
 }
 
 // Applications are dependency-first, so a reverse pass propagates selection

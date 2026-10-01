@@ -149,7 +149,7 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 			return err
 		}
 		if command != "show" && command != "status" {
-			report, err := app.runOperations(command, data, resolved, in, stderr)
+			report, err := app.runOperations(command, data, resolved, config.Configs, in, stderr)
 			if report.Profile != "" {
 				printStatus(out, config.Name, path, config.Apps, report)
 			}
@@ -206,6 +206,7 @@ func (app *cli) runOperations(
 	command string,
 	data *manifest.Data,
 	desired manifest.Resolved,
+	source *manifest.ConfigurationSource,
 	in io.Reader,
 	stderr io.Writer,
 ) (installed.Report, error) {
@@ -231,9 +232,9 @@ func (app *cli) runOperations(
 		var err error
 		switch step.name {
 		case "update":
-			report, err = installed.Update(ctx, desired, stderr)
+			report, err = installed.Update(ctx, desired, stderr, installed.ConfigurationOptions{Source: source})
 		case "install":
-			report, err = installed.Install(ctx, desired, stderr)
+			report, err = installed.Install(ctx, desired, stderr, installed.ConfigurationOptions{Source: source})
 		case "remove-extras":
 			report, err = installed.RemoveExtras(ctx, data, desired, app.Yes, in, stderr)
 		}

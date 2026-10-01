@@ -50,7 +50,7 @@ func (s *HookOperationSuite) fixture(preBody string) (string, manifest.Resolved)
 
 func (s *HookOperationSuite) TestPreFailureStopsConsumersAndAllNixMutation() {
 	dir, desired := s.fixture("printf 'dependency\\n' >> hook.log\nexit 7")
-	report, err := Install(context.Background(), desired, io.Discard)
+	report, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	var exit *exec.ExitError
 	s.Require().True(errors.As(err, &exit))
 	s.Equal(7, exit.ExitCode())
@@ -66,7 +66,7 @@ func (s *HookOperationSuite) TestPreFailureStopsConsumersAndAllNixMutation() {
 
 func (s *HookOperationSuite) TestPackageFailureDoesNotRunConfigurationHooks() {
 	dir, desired := s.fixture("printf 'dependency\\n' >> hook.log")
-	report, err := Install(context.Background(), desired, io.Discard)
+	report, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	var command *exec.Error
 	s.Require().True(errors.As(err, &command))
 	s.ErrorIs(command.Err, exec.ErrNotFound)
@@ -80,7 +80,7 @@ func (s *HookOperationSuite) TestPackageFailureDoesNotRunConfigurationHooks() {
 	s.Equal("missing", report.Applications[1].State)
 }
 
-func (s *HookOperationSuite) TestPackageFreeInstallLeavesConfigurationHooksPending() {
+func (s *HookOperationSuite) TestPackageFreeInstallRunsConfigurationHooks() {
 	dir := s.T().TempDir()
 	s.T().Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
 	hook := filepath.Join(dir, "config-hook")
@@ -91,10 +91,11 @@ func (s *HookOperationSuite) TestPackageFreeInstallLeavesConfigurationHooksPendi
 	}}
 	desired, err := data.Resolve([]string{"config"})
 	s.Require().NoError(err)
-	report, err := Install(context.Background(), desired, io.Discard)
+	report, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
 	s.Equal("package-free", report.Applications[0].State)
 	s.True(report.Applications[0].Ready)
-	_, err = os.Stat(filepath.Join(dir, "hook.log"))
-	s.ErrorIs(err, os.ErrNotExist)
+	log, err := os.ReadFile(filepath.Join(dir, "hook.log"))
+	s.Require().NoError(err)
+	s.Equal("unexpected\nunexpected\n", string(log))
 }

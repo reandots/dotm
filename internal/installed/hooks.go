@@ -20,17 +20,15 @@ func runHookPhase(
 	stderr io.Writer,
 ) (Report, error) {
 	configured, hookErr := hooks.Run(ctx, scope, phase, current.Profile, stderr)
-	if !configured || (phase == hooks.Pre && hookErr == nil) {
+	if !configured || hookErr == nil {
 		return current, hookErr
-	}
-	if hookErr != nil && (phase == hooks.PreCfg || phase == hooks.PostCfg) {
-		hookErr = fmt.Errorf("configuration hook failed; arbitrary hook effects cannot be rolled back: %w", hookErr)
 	}
 	// Scope controls which hooks run; status must still describe every desired
 	// application, including independent missing applications outside update.
 	after, inspectErr := Inspect(ctx, desired)
 	if inspectErr != nil {
-		return Report{}, errors.Join(hookErr, fmt.Errorf("inspect after %s: %w", phase, inspectErr))
+		return Report{}, operationError(SeverityInternal,
+			errors.Join(hookErr, fmt.Errorf("inspect after %s: %w", phase, inspectErr)))
 	}
 	return after, hookErr
 }

@@ -237,7 +237,7 @@ func (s *UpdateRecoverySuite) assertJournalCleared(state string) {
 func (s *UpdateRecoverySuite) TestSourceAdvanceFailureRestoresInitialState() {
 	state, profile, source, desired := s.updateFixture(false)
 	s.T().Setenv("FAIL_ADVANCE", "1")
-	_, err := Update(context.Background(), desired, io.Discard)
+	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Error(err)
 	s.assertOriginal(source, profile)
 	s.assertJournalCleared(state)
@@ -246,7 +246,7 @@ func (s *UpdateRecoverySuite) TestSourceAdvanceFailureRestoresInitialState() {
 func (s *UpdateRecoverySuite) TestUpgradeThenAddFailureRestoresInitialState() {
 	state, profile, source, desired := s.updateFixture(true)
 	s.T().Setenv("FAIL_ADD", "1")
-	_, err := Update(context.Background(), desired, io.Discard)
+	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Error(err)
 	s.assertOriginal(source, profile)
 	s.assertJournalCleared(state)
@@ -254,12 +254,43 @@ func (s *UpdateRecoverySuite) TestUpgradeThenAddFailureRestoresInitialState() {
 
 func (s *UpdateRecoverySuite) TestSuccessfulUpdateCommitsRecoverySnapshot() {
 	state, profile, source, desired := s.updateFixture(false)
-	_, err := Update(context.Background(), desired, io.Discard)
+	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
 	link, err := os.Readlink(profile)
 	s.Require().NoError(err)
 	s.Equal("profile-2-link", link)
 	s.Equal(recoveryAdvancedLock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	s.assertJournalCleared(state)
+}
+
+func (s *UpdateRecoverySuite) TestConfigurationFailureKeepsSuccessfulUpdateCommitted() {
+	state, profile, source, desired := s.updateFixture(false)
+	desired.CatalogDir = filepath.Dir(state)
+	desired.Applications[0].PostCfgHook = "failed-post"
+	hook := filepath.Join(desired.CatalogDir, "failed-post")
+	// #nosec G306 -- Executable fixture is private and only verifies post-update failure.
+	s.Require().NoError(os.WriteFile(hook, []byte("#!/bin/sh\nexit 9\n"), 0o700))
+	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
+	s.Require().Error(err)
+	link, readErr := os.Readlink(profile)
+	s.Require().NoError(readErr)
+	s.Equal("profile-2-link", link)
+	s.Equal(recoveryAdvancedLock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	s.assertJournalCleared(state)
+}
+
+func (s *UpdateRecoverySuite) TestConfigureOwnsMutationAndRecoversPendingUpdate() {
+	state, profile, source := s.fixture()
+	s.begin(profile, source)
+	s.mutate(source, profile)
+	_, release, err := BeginMutation(context.Background())
+	s.Require().NoError(err)
+	_, err = Configure(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
+	s.ErrorIs(err, errMutationBusy)
+	release()
+	_, err = Configure(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
+	s.Require().NoError(err)
+	s.assertOriginal(source, profile)
 	s.assertJournalCleared(state)
 }
 
@@ -276,7 +307,7 @@ func (s *UpdateRecoverySuite) TestCancelledUpdateUsesDetachedContextForRollback(
 	_, profile, source, desired := s.updateFixture(false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, err := Update(ctx, desired, cancellingWriter{cancel: cancel})
+	_, err := Update(ctx, desired, cancellingWriter{cancel: cancel}, ConfigurationOptions{})
 	s.Error(err)
 	s.assertOriginal(source, profile)
 }
@@ -286,7 +317,7 @@ func (s *UpdateRecoverySuite) TestInstallRecoversPendingUpdateBeforePlanning() {
 	s.begin(profile, source)
 	s.mutate(source, profile)
 	// The still-published journal models process interruption after partial mutation.
-	_, err := Install(context.Background(), manifest.Resolved{}, io.Discard)
+	_, err := Install(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
 	s.assertOriginal(source, profile)
 }
@@ -311,7 +342,7 @@ func (s *UpdateRecoverySuite) TestReplacedRecoveryGenerationBlocksMutation() {
 	target, err := filepath.EvalSymlinks(profile + "-2-link")
 	s.Require().NoError(err)
 	s.Require().NoError(os.Symlink(target, profile+"-1-link"))
-	_, err = Install(context.Background(), manifest.Resolved{}, io.Discard)
+	_, err = Install(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
 	s.Require().Error(err)
 	s.Equal("advanced flake\n", mustRead(s.T(), filepath.Join(source, "flake.nix")))
 	link, err := os.Readlink(profile)

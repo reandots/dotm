@@ -100,11 +100,11 @@ func (s *MutationSuite) TestMutationEntrypointsRejectBeforeInspection() {
 		run  func() error
 	}{
 		{"install", func() error {
-			_, operationErr := Install(context.Background(), manifest.Resolved{}, io.Discard)
+			_, operationErr := Install(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
 			return operationErr
 		}},
 		{"update", func() error {
-			_, operationErr := Update(context.Background(), manifest.Resolved{}, io.Discard)
+			_, operationErr := Update(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
 			return operationErr
 		}},
 		{"remove-extras", func() error {
@@ -146,7 +146,7 @@ func (s *MutationSuite) TestHookFailureReleasesOwnership() {
 	desired := manifest.Resolved{Applications: []manifest.Application{{
 		ID: "broken", PreHook: filepath.Join(base, "missing-hook"),
 	}}}
-	_, err := Install(context.Background(), desired, io.Discard)
+	_, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().Error(err)
 	_, release, err := BeginMutation(context.Background())
 	s.Require().NoError(err)

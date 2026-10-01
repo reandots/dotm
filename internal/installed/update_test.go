@@ -131,7 +131,7 @@ func (s *UpdateSuite) TestEmptyDesiredSetLeavesAbsentEnvironmentUntouched() {
 	base := filepath.Join(s.T().TempDir(), "state")
 	s.T().Setenv("XDG_STATE_HOME", base)
 	s.T().Setenv("PATH", "")
-	report, err := Update(context.Background(), manifest.Resolved{}, io.Discard)
+	report, err := Update(context.Background(), manifest.Resolved{}, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
 	s.Equal(filepath.Join(base, "nix", "profile"), report.Profile)
 	_, err = os.Lstat(base)
@@ -160,7 +160,7 @@ func (s *UpdateSuite) TestNewDesiredApplicationsLeaveAbsentEnvironmentUntouched(
 		Applications: []manifest.Application{{ID: "new", Packages: []manifest.Package{{Attr: "hello"}}}},
 		Packages:     []manifest.Package{{Attr: "hello"}},
 	}
-	report, err := Update(context.Background(), desired, io.Discard)
+	report, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
 	s.Require().Len(report.Applications, 1)
 	s.Equal("missing", report.Applications[0].State)

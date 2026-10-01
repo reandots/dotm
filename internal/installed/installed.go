@@ -20,10 +20,11 @@ import (
 )
 
 type Report struct {
-	Profile      string
-	Applications []ApplicationStatus
-	Entries      []Entry
-	Extras       []Entry
+	Profile       string
+	Applications  []ApplicationStatus
+	Entries       []Entry
+	Extras        []Entry
+	Configuration ConfigurationResult
 }
 
 type ApplicationStatus struct {

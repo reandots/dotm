@@ -70,7 +70,7 @@ func (s *InstallSuite) TestEmptyDesiredSetDoesNotInitializeStateOrRequireNix() {
 	base := filepath.Join(s.T().TempDir(), "state")
 	s.T().Setenv("XDG_STATE_HOME", base)
 	s.T().Setenv("PATH", "")
-	r, err := Install(context.Background(), manifest.Resolved{}, os.Stderr)
+	r, err := Install(context.Background(), manifest.Resolved{}, os.Stderr, ConfigurationOptions{})
 	s.Require().NoError(err)
 	s.Equal(filepath.Join(base, "nix", "profile"), r.Profile)
 	_, err = os.Lstat(base)

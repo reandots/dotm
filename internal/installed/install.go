@@ -18,7 +18,15 @@ import (
 // Install adds missing descriptors without upgrading or removing native entries.
 // The returned report is freshly inspected after any attempted mutation, even
 // on failure. An empty Profile means inspection itself failed.
-func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
+func Install(
+	ctx context.Context,
+	desired manifest.Resolved,
+	stderr io.Writer,
+	options ConfigurationOptions,
+) (report Report, resultErr error) {
+	output := &operationOutput{Writer: stderr}
+	stderr = output
+	defer finishOperation(&report, &resultErr, output)
 	ctx, release, err := beginOperation(ctx, stderr)
 	if err != nil {
 		return Report{}, err
@@ -52,10 +60,10 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 		}
 	}
 	if report, err := runHookPhase(ctx, desired, desired, hooks.Pre, before, stderr); err != nil {
-		return report, err
+		return report, operationError(SeverityInstallation, err)
 	}
 	if len(missing) == 0 {
-		return before, nil
+		return configure(ctx, desired, before, stderr, options)
 	}
 	var operationErr error
 	if state.Healthy {
@@ -73,18 +81,18 @@ func Install(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (
 		return Report{}, errors.Join(operationErr, fmt.Errorf("inspect after install attempt: %w", inspectErr))
 	}
 	if operationErr != nil {
-		return after, operationErr
+		return after, operationError(SeverityInstallation, operationErr)
 	}
 	for _, app := range after.Applications {
 		if !app.Ready {
-			return after, fmt.Errorf(
+			return after, operationError(SeverityInstallation, fmt.Errorf(
 				"install finished but application %q is %s; inspect the profile before retrying",
 				app.ID,
 				app.State,
-			)
+			))
 		}
 	}
-	return after, nil
+	return configure(ctx, desired, after, stderr, options)
 }
 
 func installationPlan(
