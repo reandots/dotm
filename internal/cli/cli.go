@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -29,6 +31,7 @@ type cli struct {
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
 	Clean        cleanCmd        `cmd:"" help:"Prune profile history; --gc explicitly collects the shared store"`
+	Cfg          cfgCmd          `cmd:"" help:"Inspect local configuration source policy"`
 }
 
 type (
@@ -37,8 +40,16 @@ type (
 	showCmd    struct{}
 	statusCmd  struct{}
 	installCmd struct{}
-	updateCmd  struct{}
-	cleanCmd   struct {
+	updateCmd  struct {
+		Run struct{} `cmd:"" default:"1" hidden:""`
+		Cfg struct{} `cmd:"" help:"Synchronize eligible configurations without package changes or package pre-hooks"`
+	}
+	cfgCmd struct {
+		Lint struct {
+			Source string `help:"Absolute local checkout to inspect; defaults to the shared chezmoi source"`
+		} `cmd:"" help:"Validate local source and effective chezmoi settings without downloads, execution, or writes"`
+	}
+	cleanCmd struct {
 		Keep   int  `help:"Number of highest-numbered other generations to retain in addition to the active one" default:"2"`
 		GC     bool `help:"Also collect unrooted objects throughout the shared Nix store, including objects unrelated to dotm"`
 		DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
@@ -48,7 +59,18 @@ type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
 // It returns errors to the caller without exiting the process.
-func Run(args []string, in io.Reader, out, stderr io.Writer) error {
+func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
+	output, diagnostics := &checkedWriter{Writer: out}, &checkedWriter{Writer: stderr}
+	out, stderr = output, diagnostics
+	defer func() {
+		if output.err != nil || diagnostics.err != nil {
+			resultErr = &installed.OperationError{
+				Severity: installed.SeverityInternal,
+				Err:      errors.Join(resultErr, output.err, diagnostics.err),
+			}
+		}
+	}()
+	in = bufio.NewReader(in)
 	var app cli
 	helpRequested := false
 	parser, err := kong.New(
@@ -56,7 +78,8 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 		kong.Name("dotm"),
 		kong.Description("Use a command or combine -i, -u, and -r. "+
 			"Operations always run in update, install, remove-extras order; "+
-			"stop on the first error. Failed updates attempt to restore initial package/source state; "+
+			"continue after configuration failures; stop after installation or internal failures. "+
+			"Failed package updates attempt to restore initial package/source state; "+
 			"incomplete recovery blocks later mutations; "+
 			"earlier operations and arbitrary hook effects are not rolled back."),
 		kong.Writers(out, stderr),
@@ -80,6 +103,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 		return nil
 	}
 	command := ctx.Command()
+	if command == "update run" {
+		command = "update"
+	}
 	hasOperations := app.InstallMissing || app.UpdateInstalled || app.RemoveExtra
 	if command == "operations" && !hasOperations {
 		return fmt.Errorf("expected a command or at least one of -i, -u, -r")
@@ -100,6 +126,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 			DryRun: app.Clean.DryRun,
 			Yes:    app.Yes,
 		}, in, out, stderr)
+	}
+	if command == "cfg lint" {
+		return lintSource(app.Cfg.Lint.Source, out)
 	}
 
 	data, err := manifest.Load(app.DataDir)
@@ -135,7 +164,7 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 				fmt.Fprintf(out, "  post_cfg_hook: %s\n", app.PostCfgHook)
 			}
 		}
-	case "show", "status", "install", "update", "remove-extras", "operations":
+	case "show", "status", "install", "update", "update cfg", "remove-extras", "operations":
 		path, err := manifest.SelectionPath()
 		if err != nil {
 			return err
@@ -149,11 +178,7 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) error {
 			return err
 		}
 		if command != "show" && command != "status" {
-			report, err := app.runOperations(command, data, resolved, config.Configs, in, stderr)
-			if report.Profile != "" {
-				printStatus(out, config.Name, path, config.Apps, report)
-			}
-			return err
+			return app.runOperations(command, data, resolved, config, path, in, out, stderr)
 		}
 		if command == "status" {
 			report, err := installed.Inspect(context.Background(), resolved)
@@ -206,43 +231,65 @@ func (app *cli) runOperations(
 	command string,
 	data *manifest.Data,
 	desired manifest.Resolved,
-	source *manifest.ConfigurationSource,
+	config manifest.Configuration,
+	selectionPath string,
 	in io.Reader,
-	stderr io.Writer,
-) (installed.Report, error) {
+	out, stderr io.Writer,
+) error {
 	steps := [...]struct {
 		name      string
 		requested bool
 	}{
-		{"update", app.UpdateInstalled || command == "update"},
+		{"update", app.UpdateInstalled || command == "update" || command == "update cfg"},
 		{"install", app.InstallMissing || command == "install"},
 		{"remove-extras", app.RemoveExtra || command == "remove-extras"},
 	}
 	ctx, release, lockErr := installed.BeginMutation(context.Background())
 	if lockErr != nil {
-		return installed.Report{}, lockErr
+		return lockErr
 	}
 	defer release()
-	var report installed.Report
+	var failures []error
+	options := installed.ConfigurationOptions{
+		Source: config.Configs, ConfirmReplacement: confirmReplacement(in, stderr),
+	}
 	for _, step := range steps {
 		if !step.requested {
 			continue
 		}
 		fmt.Fprintf(stderr, "Operation: %s\n", step.name)
+		var report installed.Report
 		var err error
 		switch step.name {
 		case "update":
-			report, err = installed.Update(ctx, desired, stderr, installed.ConfigurationOptions{Source: source})
+			if command == "update cfg" {
+				report, err = installed.Configure(ctx, desired, stderr, options)
+			} else {
+				report, err = installed.Update(ctx, desired, stderr, options)
+			}
 		case "install":
-			report, err = installed.Install(ctx, desired, stderr, installed.ConfigurationOptions{Source: source})
+			report, err = installed.Install(ctx, desired, stderr, options)
 		case "remove-extras":
 			report, err = installed.RemoveExtras(ctx, data, desired, app.Yes, in, stderr)
 		}
+		if report.Profile != "" {
+			fmt.Fprintf(out, "Operation result: %s\n", step.name)
+			printStatus(out, config.Name, selectionPath, config.Apps, report)
+		}
+		printConfiguration(out, report.Configuration)
+		for _, stream := range []io.Writer{out, stderr} {
+			if writer, ok := stream.(*checkedWriter); ok && writer.err != nil {
+				err = &installed.OperationError{Severity: installed.SeverityInternal, Err: errors.Join(err, writer.err)}
+			}
+		}
 		if err != nil {
-			return report, fmt.Errorf("%s: %w", step.name, err)
+			failures = append(failures, fmt.Errorf("%s: %w", step.name, err))
+			if ExitCode(err) >= 2 {
+				break
+			}
 		}
 	}
-	return report, nil
+	return errors.Join(failures...)
 }
 
 func printStatus(out io.Writer, name, path string, selected []string, report installed.Report) {
