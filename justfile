@@ -40,6 +40,10 @@ mod-check:
 build:
     go build .
 
+# Build a local release binary without debugger symbols or DWARF information.
+build-release:
+    go build -ldflags="-s -w" .
+
 # Run the CLI, forwarding arguments.
 run *args:
     go run . {{args}}
