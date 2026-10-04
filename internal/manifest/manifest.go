@@ -26,6 +26,7 @@ type Application struct {
 	Packages     []Package
 	PreHook      string
 	Configs      []string
+	Unmanaged    []string
 	PreCfgHook   string
 	PostCfgHook  string
 }
@@ -42,9 +43,11 @@ type ConfigurationSource struct {
 }
 
 type Data struct {
-	Apps       map[string]Application
-	Configs    map[string]Configuration
-	CatalogDir string
+	Apps             map[string]Application
+	Configs          map[string]Configuration
+	CatalogDir       string
+	FileDeclarations []FileDeclaration
+	FileDiagnostics  []FileDiagnostic
 }
 
 var (
@@ -73,6 +76,7 @@ func Load(dir string) (*Data, error) {
 		Dependencies []string `toml:"dependencies"`
 		Nix          []any    `toml:"nix"`
 		Configs      []string `toml:"configs"`
+		Unmanaged    []string `toml:"unmanaged"`
 		PreHook      *string  `toml:"pre_hook"`
 		PreCfgHook   *string  `toml:"pre_cfg_hook"`
 		PostCfgHook  *string  `toml:"post_cfg_hook"`
@@ -112,15 +116,28 @@ func Load(dir string) (*Data, error) {
 				*hook.target = *hook.value
 			}
 		}
-		targets := make(map[string]bool, len(raw.Configs))
-		for _, value := range raw.Configs {
-			target, err := pathutil.Target(value)
-			if err != nil {
-				return nil, fmt.Errorf("%s: application %q: config target %q: %w", catalogPath, id, value, err)
-			}
-			if !targets[target] {
-				targets[target] = true
-				app.Configs = append(app.Configs, target)
+		for _, field := range []struct {
+			name   string
+			values []string
+			target *[]string
+		}{
+			{"configs", raw.Configs, &app.Configs},
+			{"unmanaged", raw.Unmanaged, &app.Unmanaged},
+		} {
+			seen := make(map[string]bool, len(field.values))
+			for i, value := range field.values {
+				target, targetErr := pathutil.Target(value)
+				if targetErr != nil {
+					return nil, fmt.Errorf("%s: application %q: %s[%d] = %q: %w",
+						catalogPath, id, field.name, i, value, targetErr)
+				}
+				d.FileDeclarations = append(d.FileDeclarations, FileDeclaration{
+					Source: catalogPath, Application: id, Field: field.name, Index: i, Input: value, Path: target,
+				})
+				if !seen[target] {
+					seen[target] = true
+					*field.target = append(*field.target, target)
+				}
 			}
 		}
 		packages := make(map[string]bool)
@@ -152,6 +169,12 @@ func Load(dir string) (*Data, error) {
 		}
 		d.Apps[app.ID] = app
 	}
+	files := FileModel{Declarations: d.FileDeclarations}
+	files.lint()
+	if err := files.Err(); err != nil {
+		return nil, err
+	}
+	d.FileDiagnostics = files.Diagnostics
 	for _, id := range d.ApplicationIDs() {
 		if err := checkReferences("application "+id, d.Apps[id].Dependencies, d.Apps); err != nil {
 			return nil, fmt.Errorf("%s: %w", catalogPath, err)

@@ -136,10 +136,10 @@ post_cfg_hook = "hooks/finish"
 [left]
 dependencies = ["shared"]
 nix = []
-configs = ["~/.config/tool/file with spaces"]
+configs = ["~/.config/left/file with spaces"]
 [right]
 dependencies = ["shared"]
-configs = ["~/.config/tool"]
+configs = ["~/.config/right"]
 [shared]
 nix = ["hello"]
 `, `[[configurations]]
@@ -166,8 +166,9 @@ repository = "https://example.invalid/dotfiles.git"
 	s.Equal("hooks/prepare", d.Apps["root"].PreCfgHook)
 	s.Equal("hooks/finish", d.Apps["root"].PostCfgHook)
 	s.Equal([]ConfigTarget{
-		{Path: "/home/model-test/.config/tool/file with spaces", Applications: []string{"left"}},
-		{Path: "/home/model-test/.config/tool", Applications: []string{"right", "root"}},
+		{Path: "/home/model-test/.config/left/file with spaces", Applications: []string{"left"}},
+		{Path: "/home/model-test/.config/right", Applications: []string{"right"}},
+		{Path: "/home/model-test/.config/tool", Applications: []string{"root"}},
 	}, resolved.Targets)
 }
 
