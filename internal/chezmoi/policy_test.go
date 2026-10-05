@@ -1,0 +1,233 @@
+package chezmoi
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
+
+	"dotm/internal/manifest"
+)
+
+type policySuite struct {
+	suite.Suite
+	root, checkout, source, home, config string
+}
+
+func TestPolicySuite(t *testing.T) {
+	if _, err := exec.LookPath("chezmoi"); err != nil {
+		t.Skip("chezmoi is required for real-backend policy tests")
+	}
+	suite.Run(t, new(policySuite))
+}
+
+func (s *policySuite) SetupTest() {
+	s.root = s.T().TempDir()
+	s.checkout = filepath.Join(s.root, "checkout")
+	s.source = s.checkout
+	s.home = filepath.Join(s.root, "home")
+	configDir := filepath.Join(s.root, "xdg-config", "chezmoi")
+	s.config = filepath.Join(configDir, "chezmoi.toml")
+	for _, dir := range []string{s.checkout, s.home, configDir} {
+		s.Require().NoError(os.MkdirAll(dir, 0o700))
+	}
+	for name, value := range map[string]string{
+		"HOME":            s.home,
+		"XDG_CONFIG_HOME": filepath.Dir(configDir),
+		"XDG_CONFIG_DIRS": filepath.Join(s.root, "system-config"),
+		"XDG_DATA_HOME":   filepath.Join(s.root, "data"),
+		"XDG_STATE_HOME":  filepath.Join(s.root, "state"),
+		"XDG_CACHE_HOME":  filepath.Join(s.root, "cache"),
+	} {
+		s.T().Setenv(name, value)
+	}
+	s.configure("")
+	s.git("init", "--quiet", s.checkout)
+	bare := filepath.Join(s.root, "remote.git")
+	s.git("init", "--bare", "--quiet", bare)
+	s.git("-C", s.checkout, "remote", "add", "origin", bare)
+	s.commit()
+}
+
+func (s *policySuite) write(path, content string) {
+	s.T().Helper()
+	s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
+	//nolint:gosec // G703: all caller-provided fixture paths are confined to this test's private temporary directory.
+	s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
+}
+
+func (s *policySuite) git(args ...string) {
+	s.T().Helper()
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err, "%s: %s", strings.Join(args, " "), out)
+}
+
+func (s *policySuite) commit() {
+	s.T().Helper()
+	s.git("-C", s.checkout, "add", "--all")
+	s.git("-C", s.checkout, "-c", "user.name=Policy Test", "-c", "user.email=policy@example.invalid",
+		"commit", "--quiet", "--allow-empty", "-m", "fixture")
+}
+
+func (s *policySuite) input(config string, declarations ...manifest.FileDeclaration) PolicyInput {
+	return PolicyInput{
+		RepositoryID: "dotm-example", Configuration: config,
+		Files: manifest.FileModel{Declarations: declarations},
+	}
+}
+
+func (s *policySuite) configure(policyPath string) {
+	s.T().Helper()
+	content := "sourceDir = " + strconv.Quote(s.checkout) + "\ndestDir = " + strconv.Quote(s.home) + "\n"
+	if policyPath != "" {
+		content += "[data.dotm]\npolicyFile = " + strconv.Quote(policyPath) + "\n"
+	}
+	s.write(s.config, content)
+}
+
+func (s *policySuite) integrate() string {
+	s.T().Helper()
+	path, err := PolicyPath(Policy{ConfigFile: s.config, SourceDir: s.source, DestDir: s.home})
+	s.Require().NoError(err)
+	s.configure(path)
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "examples", "chezmoi-policy", ".chezmoiignore"))
+	s.Require().NoError(err)
+	s.write(filepath.Join(s.source, ".chezmoiignore"), string(fixture))
+	return path
+}
+
+func (s *policySuite) managed() []string {
+	s.T().Helper()
+	data, err := policyCommand(context.Background(), applyCommand{source: s.checkout},
+		"managed", "--nul-path-separator")
+	s.Require().NoError(err)
+	return strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+}
+
+func (s *policySuite) publish(input PolicyInput) Policy {
+	s.T().Helper()
+	policy, err := CompilePolicy(context.Background(), s.checkout, input)
+	s.Require().NoError(err)
+	s.Require().NoError(PublishPolicy(context.Background(), s.checkout, policy))
+	return policy
+}
+
+func (s *policySuite) TestLiteralExclusionsPreserveSiblingsAndNativeRules() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "dot_config", "selected", ".chezmoiignore"), "*.db\n")
+	s.write(filepath.Join(s.source, "dot_config", "selected", "cache.db"), "native exclusion")
+	s.write(filepath.Join(s.source, "dot_config", "selected", "settings"), "selected")
+	names := []string{
+		"glob*name", "question?name", "bracket[name]", "brace{a,b}", `back\slash`, "#hash", "!bang",
+		"white #hash", " leading", "trailing ", "with\ttab", `{{ fail "MUST_NOT_EXECUTE" }}`,
+	}
+	declarations := []manifest.FileDeclaration{}
+	for _, name := range names {
+		s.write(filepath.Join(s.source, "literal_"+name), "hidden")
+		s.write(filepath.Join(s.source, "literal_"+name+"-sibling"), "visible")
+		declarations = append(declarations, manifest.FileDeclaration{
+			Field: "unmanaged", Path: filepath.Join(s.home, name), Input: name, Selected: true,
+		})
+	}
+	s.commit()
+	standalone := s.managed()
+	s.Contains(standalone, "glob*name")
+	s.NotContains(standalone, ".config/selected/cache.db")
+	s.publish(s.input("work", declarations...))
+	filtered := s.managed()
+	for _, name := range names {
+		s.NotContains(filtered, name)
+		s.Contains(filtered, name+"-sibling")
+	}
+	s.NotContains(filtered, ".config/selected/cache.db")
+	s.Contains(filtered, ".config/selected/settings")
+}
+
+func (s *policySuite) TestProfileSwitchNewSourceContentAndEmptyPolicy() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "dot_config", "one", "settings"), "one")
+	s.write(filepath.Join(s.source, "dot_config", "two", "settings"), "two")
+	s.commit()
+	one := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "one"), Application: "one", Selected: true,
+	}
+	two := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "two"), Application: "two",
+	}
+	s.publish(s.input("profile-one", one, two))
+	s.Contains(s.managed(), ".config/one/settings")
+	s.NotContains(s.managed(), ".config/two/settings")
+	s.write(filepath.Join(s.source, "dot_config", "two", "new"), "new source content")
+	s.NotContains(s.managed(), ".config/two/new")
+	one.Selected, two.Selected = false, true
+	s.publish(s.input("profile-two", one, two))
+	s.NotContains(s.managed(), ".config/one/settings")
+	s.Contains(s.managed(), ".config/two/new")
+	s.publish(s.input("empty"))
+	s.Contains(s.managed(), ".config/one/settings")
+	s.Contains(s.managed(), ".config/two/settings")
+}
+
+func (s *policySuite) TestSourceRebindingUsesEffectiveRoot() {
+	firstPath := s.integrate()
+	first := s.publish(s.input("work"))
+	s.write(filepath.Join(s.checkout, ".chezmoiroot"), "effective\n")
+	s.source = filepath.Join(s.checkout, "effective")
+	secondPath := s.integrate()
+	s.NotEqual(firstPath, secondPath)
+	s.write(filepath.Join(s.source, "hidden"), "hidden")
+	s.commit()
+	second := s.publish(s.input("work", manifest.FileDeclaration{
+		Field: "unmanaged", Path: filepath.Join(s.home, "hidden"), Selected: true,
+	}))
+	s.Equal(s.source, second.SourceDir)
+	s.NotEqual(first.Freshness, second.Freshness)
+	s.NotContains(s.managed(), "hidden")
+}
+
+func (s *policySuite) TestCandidateFailurePreservesPolicyAndCleanCheckout() {
+	path := s.integrate()
+	s.write(filepath.Join(s.source, "visible"), "source")
+	s.commit()
+	input := s.input("work")
+	oldCandidate := s.publish(input)
+	old, err := os.ReadFile(path)
+	s.Require().NoError(err)
+	s.write(filepath.Join(s.source, "new-file"), "new input")
+	s.ErrorContains(PublishPolicy(context.Background(), s.checkout, oldCandidate), "stale")
+	s.write(filepath.Join(s.source, "bad.tmpl"), `{{ fail "candidate evaluation failure" }}`)
+	candidate, err := CompilePolicy(context.Background(), s.checkout, input)
+	s.Require().NoError(err)
+	s.ErrorContains(PublishPolicy(context.Background(), s.checkout, candidate), "candidate evaluation failure")
+	after, err := os.ReadFile(path)
+	s.Require().NoError(err)
+	s.True(bytes.Equal(old, after), "failed candidate must not replace the published policy")
+	s.Require().NoError(os.Remove(filepath.Join(s.source, "bad.tmpl")))
+	s.commit()
+	s.publish(input)
+	status, err := git(context.Background(), s.checkout, "status", "--porcelain=v1", "--untracked-files=all")
+	s.Require().NoError(err)
+	s.Empty(status)
+	_, err = os.Lstat(filepath.Join(s.home, "visible"))
+	s.Require().True(os.IsNotExist(err), "publication must not apply source contents")
+}
+
+func (s *policySuite) TestUnrepresentableGeneratedPathsAndUnsupportedMapping() {
+	for _, scenario := range []struct{ path, message string }{
+		{filepath.Join(s.root, "outside"), "outside or equals"},
+		{filepath.Join(s.home, "line\nbreak"), "CR/LF"},
+		{filepath.Join(s.home, "carriage\rreturn"), "CR/LF"},
+	} {
+		_, err := CompilePolicy(context.Background(), s.checkout,
+			s.input("work", manifest.FileDeclaration{Field: "unmanaged", Path: scenario.path}))
+		s.ErrorContains(err, scenario.message)
+	}
+}
