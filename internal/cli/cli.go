@@ -32,6 +32,7 @@ type cli struct {
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
 	Clean        cleanCmd        `cmd:"" help:"Prune profile history; --gc explicitly collects the shared store"`
 	Cfg          cfgCmd          `cmd:"" help:"Inspect local configuration source policy"`
+	Files        filesCmd        `cmd:"" help:"Lint or refresh effective chezmoi file policy"`
 }
 
 type (
@@ -55,6 +56,17 @@ type (
 		DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
 	}
 )
+
+type filesCmd struct {
+	Lint struct {
+		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
+	} `cmd:"" help:"Check declarations, trusted templates, and integration without persistent changes"`
+	Refresh struct {
+		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
+		UpdateSource bool   `name:"update-source" help:"Acquire or update the shared checkout first (may fetch; dirty work is never discarded)"`
+	} `cmd:"" help:"Publish and verify files policy; evaluates templates, --update-source may fetch"`
+}
+
 type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
@@ -126,6 +138,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 			DryRun: app.Clean.DryRun,
 			Yes:    app.Yes,
 		}, in, out, stderr)
+	}
+	if command == "files lint" || command == "files refresh" {
+		return runFiles(command, app.Files, app.DataDir, in, out, stderr)
 	}
 	if command == "cfg lint" {
 		return lintSource(app.Cfg.Lint.Source, out)

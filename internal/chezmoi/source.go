@@ -163,6 +163,25 @@ func localRepositoryPath(repository string) (string, bool) {
 	return repository, !strings.Contains(repository, ":")
 }
 
+// ValidateRepository confirms that the existing checkout's origin matches the
+// configured repository without contacting the remote.
+func ValidateRepository(ctx context.Context, source, repository string) error {
+	if strings.TrimSpace(repository) == "" || strings.ContainsAny(repository, "\x00\r\n") {
+		return fmt.Errorf("invalid configured source repository")
+	}
+	origin, err := git(ctx, source, "remote", "get-url", "--all", "origin")
+	if err != nil {
+		return fmt.Errorf("inspect source origin: %w", err)
+	}
+	if origin == "" || strings.Contains(origin, "\n") {
+		return fmt.Errorf("source must have exactly one effective origin URL")
+	}
+	if repositoryIdentity(origin) != repositoryIdentity(repository) {
+		return fmt.Errorf("source origin %q does not match configured repository %q", origin, repository)
+	}
+	return nil
+}
+
 // Always disable Git hooks and recursive submodules. Git transport/filter helpers
 // and trusted local Git configuration are not sandboxed by this backend.
 func git(ctx context.Context, dir string, args ...string) (string, error) {

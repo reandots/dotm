@@ -57,6 +57,22 @@ func beginOperation(ctx context.Context, stderr io.Writer) (context.Context, fun
 	return ctx, release, nil
 }
 
+// CheckPendingRecovery refuses work while an interrupted package update needs
+// explicit recovery. It never starts Nix or attempts recovery itself.
+func CheckPendingRecovery() error {
+	base, err := stateHome()
+	if err != nil {
+		return fmt.Errorf("resolve update recovery state: %w", err)
+	}
+	journal := filepath.Join(base, "dotm", updateJournalName)
+	if _, err := os.Lstat(journal); err == nil {
+		return errors.New("pending update recovery journal exists; recover it before files refresh")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect pending update recovery journal: %w", err)
+	}
+	return nil
+}
+
 // beginUpdateRecovery durably records the original source files and native
 // generation before an update performs its first mutation.
 func beginUpdateRecovery(ctx context.Context, profile string, stderr io.Writer) (*updateRecovery, error) {

@@ -203,6 +203,10 @@ func (s *policySuite) TestCandidateFailurePreservesPolicyAndCleanCheckout() {
 	s.Require().NoError(err)
 	s.write(filepath.Join(s.source, "new-file"), "new input")
 	s.ErrorContains(PublishPolicy(context.Background(), s.checkout, oldCandidate), "stale")
+	freshCandidate, err := CompilePolicy(context.Background(), s.checkout, input)
+	s.Require().NoError(err)
+	_, err = CheckPolicy(context.Background(), s.checkout, freshCandidate, false)
+	s.Require().NoError(err, "candidate inspection must not consume stale published policy")
 	s.write(filepath.Join(s.source, "bad.tmpl"), `{{ fail "candidate evaluation failure" }}`)
 	candidate, err := CompilePolicy(context.Background(), s.checkout, input)
 	s.Require().NoError(err)
@@ -230,4 +234,109 @@ func (s *policySuite) TestUnrepresentableGeneratedPathsAndUnsupportedMapping() {
 			s.input("work", manifest.FileDeclaration{Field: "unmanaged", Path: scenario.path}))
 		s.ErrorContains(err, scenario.message)
 	}
+}
+
+func (s *policySuite) TestCheckPolicyReportsNativeExposureAndPublishedStaleness() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "dot_config", "other", "settings"), "hidden")
+	fixture, readErr := os.ReadFile(filepath.Join("..", "..", "examples", "chezmoi-policy", ".chezmoiignore"))
+	s.Require().NoError(readErr)
+	s.write(filepath.Join(s.source, ".chezmoiignore"), string(fixture)+"\n!.config/other/**\n!ack/future\n")
+	s.commit()
+	declaration := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "other"), Application: "other",
+	}
+	absent := manifest.FileDeclaration{Field: "unmanaged", Path: filepath.Join(s.home, "ack", "future"), Selected: true}
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work", declaration, absent))
+	s.Require().NoError(err)
+	result, err := CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.Require().NoError(err)
+	s.NotEmpty(result.Diagnostics)
+	s.Require().NoError(PublishPolicy(context.Background(), s.checkout, policy))
+	result, err = CheckPolicy(context.Background(), s.checkout, policy, true)
+	s.Require().NoError(err)
+	s.NotEmpty(result.Diagnostics)
+}
+
+func (s *policySuite) TestCheckPolicyWarnsForPresentWhollyHiddenSelectedConfig() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "dot_config", "selected", "settings"), "selected")
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "examples", "chezmoi-policy", ".chezmoiignore"))
+	s.Require().NoError(err)
+	s.write(filepath.Join(s.source, ".chezmoiignore"), string(fixture)+"\n**\n")
+	s.commit()
+	declaration := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "selected"), Application: "selected", Selected: true,
+	}
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work", declaration))
+	s.Require().NoError(err)
+	result, err := CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.Require().NoError(err)
+	found := false
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Severity == manifest.FileWarning {
+			found = true
+		}
+	}
+	s.True(found, "present selected config hidden by native rules should warn")
+}
+
+func (s *policySuite) TestCheckPolicyRetainsTemplateFailureCause() {
+	s.integrate()
+	s.write(filepath.Join(s.source, ".chezmoiignore"), `{{ fail "native ignore execution failure" }}`)
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work"))
+	s.Require().NoError(err)
+	_, err = CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.ErrorContains(err, "native ignore execution failure")
+}
+
+func (s *policySuite) TestCheckPolicyFindsAbsentNestedNegationWithWhitespaceScope() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "dot_config", "other ", ".chezmoiignore"), "!future\n")
+	declaration := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "other "), Application: "other",
+	}
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work", declaration))
+	s.Require().NoError(err)
+	result, err := CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.Require().NoError(err)
+	s.Error(result.Err(), "absent nested paths must not bypass the generated exclusion")
+}
+
+func (s *policySuite) TestCheckPolicyEvaluatesNativeIgnoreInLiteralDirectory() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "literal_assets", ".chezmoiignore"), `{{ fail "not an ignore template" }}`)
+	declaration := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, "assets"), Application: "assets", Selected: true,
+	}
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work", declaration))
+	s.Require().NoError(err)
+	_, err = CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.ErrorContains(err, "not an ignore template",
+		"chezmoi evaluates nested native ignores even inside literal_ directories")
+}
+
+func (s *policySuite) TestCheckPolicyUsesCombinedPatternSetDefaults() {
+	path := s.integrate()
+	fixture, err := os.ReadFile(filepath.Join(s.source, ".chezmoiignore"))
+	s.Require().NoError(err)
+	s.write(filepath.Join(s.source, ".chezmoiignore"), string(fixture)+"\n!ack/future\n")
+	s.write(filepath.Join(s.source, "dot_config", "selected", "settings"), "selected")
+	selected := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "selected"), Application: "selected", Selected: true,
+	}
+	other := manifest.FileDeclaration{
+		Field: "configs", Path: filepath.Join(s.home, ".config", "other"), Application: "other",
+	}
+	policy, err := CompilePolicy(context.Background(), s.checkout, s.input("work", selected, other))
+	s.Require().NoError(err)
+	result, err := CheckPolicy(context.Background(), s.checkout, policy, false)
+	s.Require().NoError(err)
+	s.NoError(result.Err())
+	for _, diagnostic := range result.Diagnostics {
+		s.NotEqual(manifest.FileWarning, diagnostic.Severity,
+			"adding generated positive patterns changes the negative-only native default")
+	}
+	_, statErr := os.Lstat(path)
+	s.Require().True(os.IsNotExist(statErr), "candidate inspection must not publish policy")
 }

@@ -269,8 +269,8 @@ func policyFreshness(ctx context.Context, policy Policy, settings []byte) (strin
 }
 
 // PublishPolicy checks a fresh candidate before atomic replacement. Callers hold
-// mutation ownership. Effective native-negation lint is a separate operation.
-// Post-publication/manual mutation and power-loss rollback are not promised.
+// mutation ownership and run CheckPolicy before and after publication. Post-publication
+// manual mutation and power-loss rollback are not promised.
 func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 	current, err := CompilePolicy(ctx, source, policy.Input)
 	if err != nil {
@@ -359,4 +359,282 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 		return fmt.Errorf("policy published, but normal integration inspection failed: %w", err)
 	}
 	return nil
+}
+
+// CheckPolicy checks native effective rules before publication and verifies the
+// persisted binding and normal integration when published is true.
+func CheckPolicy(ctx context.Context, source string, policy Policy, published bool) (manifest.FileModel, error) {
+	result := manifest.FileModel{}
+	candidate, err := CompilePolicy(ctx, source, policy.Input)
+	if err != nil {
+		return result, err
+	}
+	if published {
+		path, pathErr := PolicyPath(candidate)
+		if pathErr != nil {
+			return result, pathErr
+		}
+		info, statErr := os.Lstat(path)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+					Severity: manifest.FileError, Message: "published files policy is missing",
+				})
+			} else {
+				return result, fmt.Errorf("inspect published files policy: %w", statErr)
+			}
+		} else if !info.Mode().IsRegular() {
+			result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+				Severity: manifest.FileError, Message: "published files policy is not a regular file",
+			})
+		} else {
+			persistedBytes, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return result, fmt.Errorf("read published files policy: %w", readErr)
+			}
+			var persisted Policy
+			if decodeErr := json.Unmarshal(persistedBytes, &persisted); decodeErr != nil {
+				result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+					Severity: manifest.FileError,
+					Message:  fmt.Sprintf("published files policy is malformed: %v", decodeErr),
+				})
+			} else {
+				want, marshalErr := json.Marshal(candidate)
+				if marshalErr != nil {
+					return result, marshalErr
+				}
+				persistedJSON, marshalErr := json.Marshal(persisted)
+				if marshalErr != nil {
+					return result, marshalErr
+				}
+				callerJSON, marshalErr := json.Marshal(policy)
+				if marshalErr != nil {
+					return result, marshalErr
+				}
+				if !bytes.Equal(want, persistedJSON) || !bytes.Equal(want, callerJSON) {
+					result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+						Severity: manifest.FileError, Message: "published files policy is stale or mismatched",
+					})
+				}
+			}
+		}
+	}
+	nativeDiagnostics, err := inspectEffectiveRules(ctx, source, candidate)
+	if err != nil {
+		return result, err
+	}
+	result.Diagnostics = append(result.Diagnostics, nativeDiagnostics...)
+	consumed, candidateManaged, probeErr := verifyPolicyConsumption(ctx, applyCommand{source: source}, candidate)
+	if probeErr != nil {
+		return result, probeErr
+	}
+	if !consumed {
+		result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+			Severity: manifest.FileError, Message: "root ignore template does not consume the bound external policy",
+		})
+	}
+	command := applyCommand{source: source}
+	nativeData := `{"dotm":{"nativeOnly":true}}`
+	native, err := policyCommand(ctx, command, "--override-data", nativeData, "managed", "--nul-path-separator")
+	if err != nil {
+		return result, fmt.Errorf("inspect native managed files: %w", err)
+	}
+	if published {
+		full, fullErr := policyCommand(ctx, command, "managed", "--nul-path-separator")
+		if fullErr != nil {
+			return result, fmt.Errorf("inspect published managed files: %w", fullErr)
+		}
+		for _, sourcePath := range strings.Split(strings.TrimSuffix(string(full), "\x00"), "\x00") {
+			for _, exclusion := range candidate.Exclusions {
+				root, rootErr := filepath.Rel(candidate.DestDir, exclusion.Root)
+				if rootErr != nil {
+					return result, rootErr
+				}
+				root = filepath.ToSlash(root)
+				if filepath.ToSlash(sourcePath) == root || strings.HasPrefix(filepath.ToSlash(sourcePath), root+"/") {
+					result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+						Severity: manifest.FileError, Declaration: exclusion.Origin,
+						Message: fmt.Sprintf("published policy integration leaves excluded managed path %q visible",
+							sourcePath),
+					})
+				}
+			}
+		}
+	}
+	if published {
+		ignored, ignoredErr := policyCommand(ctx, command, "ignored", "--nul-path-separator")
+		if ignoredErr != nil {
+			return result, fmt.Errorf("inspect published ignored files: %w", ignoredErr)
+		}
+		ignoredSet := make(map[string]bool)
+		for _, path := range strings.Split(strings.TrimSuffix(string(ignored), "\x00"), "\x00") {
+			ignoredSet[filepath.ToSlash(path)] = true
+		}
+		for _, sourcePath := range strings.Split(strings.TrimSuffix(string(native), "\x00"), "\x00") {
+			for _, exclusion := range candidate.Exclusions {
+				root, rootErr := filepath.Rel(candidate.DestDir, exclusion.Root)
+				if rootErr != nil {
+					return result, rootErr
+				}
+				root = filepath.ToSlash(root)
+				path := filepath.ToSlash(sourcePath)
+				if (path == root || strings.HasPrefix(path, root+"/")) && !isIgnoredByAncestor(path, ignoredSet) {
+					result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+						Severity: manifest.FileError, Declaration: exclusion.Origin,
+						Message: fmt.Sprintf("published ignored output omits native path %q "+
+							"under a generated exclusion",
+							path),
+					})
+				}
+			}
+		}
+	}
+	var mappedSourceTargets []string
+	sourceTargetsMapped := false
+	for _, declaration := range candidate.Input.Files.Declarations {
+		if declaration.Field != "configs" || !declaration.Selected {
+			continue
+		}
+		visibleRoot := filepath.ToSlash(filepath.Clean(declaration.Path))
+		visible := false
+		for _, sourcePath := range strings.Split(strings.TrimSuffix(string(candidateManaged), "\x00"), "\x00") {
+			path := filepath.ToSlash(filepath.Clean(filepath.Join(candidate.DestDir, filepath.FromSlash(sourcePath))))
+			if path == visibleRoot || strings.HasPrefix(path, visibleRoot+"/") {
+				visible = true
+				break
+			}
+		}
+		if visible {
+			continue
+		}
+		if !sourceTargetsMapped {
+			entries, walkErr := effectiveSourceEntries(candidate.SourceDir)
+			if walkErr != nil {
+				return result, fmt.Errorf("inspect source members for hidden configs: %w", walkErr)
+			}
+			for _, entry := range entries {
+				if filepath.Base(entry) == ".chezmoiignore" {
+					continue
+				}
+				target, targetErr := policyCommand(ctx, command, "--override-data", nativeData, "target-path", entry)
+				if targetErr != nil {
+					return result, fmt.Errorf("map source entry %q for hidden-config inspection: %w", entry, targetErr)
+				}
+				targetPath := strings.TrimSuffix(string(target), "\n")
+				if targetPath == "" {
+					return result, fmt.Errorf("empty target mapping for source entry %q", entry)
+				}
+				if !filepath.IsAbs(targetPath) {
+					return result, fmt.Errorf("non-absolute target mapping for source entry %q: %q", entry, targetPath)
+				}
+				mappedSourceTargets = append(mappedSourceTargets, filepath.Clean(targetPath))
+			}
+			sourceTargetsMapped = true
+		}
+		for _, target := range mappedSourceTargets {
+			if target == visibleRoot || within(visibleRoot, target) {
+				result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+					Severity: manifest.FileWarning, Declaration: declaration,
+					Message: "selected config is wholly hidden by native ignore rules",
+				})
+				break
+			}
+		}
+	}
+	if published {
+		configured, runErr := policyCommand(ctx, command, "execute-template",
+			`{{ $d := default dict (get . "dotm") }}`+
+				`{{ if default false (get $d "nativeOnly") }}nativeOnly{{ else }}`+
+				`{{ default "" (get $d "policyFile") }}{{ end }}`)
+		if runErr != nil {
+			return result, fmt.Errorf("inspect published files policy integration: %w", runErr)
+		}
+		path, pathErr := PolicyPath(candidate)
+		if pathErr != nil {
+			return result, pathErr
+		}
+		if string(configured) != path {
+			result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
+				Severity: manifest.FileError, Message: "published policy is not bound by normal chezmoi configuration",
+			})
+		}
+		if _, runErr = policyCommand(ctx, command, "dump", "--format=json"); runErr != nil {
+			return result, fmt.Errorf("inspect published files policy integration: %w", runErr)
+		}
+	}
+	return result, nil
+}
+
+// verifyPolicyConsumption uses an isolated scratch policy carrying a unique
+// literal marker. It never changes published state, source, or destinations.
+func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy Policy) (bool, []byte, error) {
+	marker := ".dotm-policy-probe-" + policy.Freshness
+	probe := policy
+	probe.Patterns = append(append([]string(nil), policy.Patterns...), marker)
+	data, err := json.Marshal(probe)
+	if err != nil {
+		return false, nil, err
+	}
+	file, err := os.CreateTemp("", "dotm-policy-probe-*.json")
+	if err != nil {
+		return false, nil, fmt.Errorf("create policy inspection probe: %w", err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	if _, err = file.Write(data); err != nil {
+		_ = file.Close()
+		return false, nil, err
+	}
+	if err = file.Close(); err != nil {
+		return false, nil, err
+	}
+	contexts := []string{"dump", "managed", "ignored", "status", "unmanaged", "apply"}
+	for _, contextName := range contexts {
+		override, marshalErr := json.Marshal(map[string]any{
+			"chezmoi": map[string]any{"command": contextName},
+			"dotm":    map[string]any{"policyFile": path, "nativeOnly": false},
+		})
+		if marshalErr != nil {
+			return false, nil, marshalErr
+		}
+		rendered, runErr := policyCommand(ctx, command, "--override-data", string(override), "execute-template",
+			"--file", filepath.Join(policy.SourceDir, ".chezmoiignore"))
+		if runErr != nil {
+			return false, nil, fmt.Errorf("render policy integration for %s: %w", contextName, runErr)
+		}
+		found := false
+		for _, line := range strings.Split(string(rendered), "\n") {
+			if line == marker {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil, nil
+		}
+	}
+	override, err := json.Marshal(map[string]any{
+		"dotm": map[string]any{"policyFile": path, "nativeOnly": false},
+	})
+	if err != nil {
+		return false, nil, err
+	}
+	if _, err = policyCommand(ctx, command, "--override-data", string(override), "dump", "--format=json"); err != nil {
+		return false, nil, err
+	}
+	managed, err := policyCommand(ctx, command, "--override-data", string(override), "managed", "--nul-path-separator")
+	return true, managed, err
+}
+
+func isIgnoredByAncestor(path string, ignored map[string]bool) bool {
+	for {
+		if ignored[path] {
+			return true
+		}
+		separator := strings.LastIndexByte(path, '/')
+		if separator < 0 {
+			return ignored["."]
+		}
+		path = path[:separator]
+	}
 }
