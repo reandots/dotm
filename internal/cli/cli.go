@@ -65,6 +65,9 @@ type filesCmd struct {
 		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
 		UpdateSource bool   `name:"update-source" help:"Acquire or update the shared checkout first (may fetch; dirty work is never discarded)"`
 	} `cmd:"" help:"Publish and verify files policy; evaluates templates, --update-source may fetch"`
+	Status struct {
+		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
+	} `cmd:"" help:"Refresh local files policy and inspect filesystem status"`
 }
 
 type removeExtrasCmd struct{}
@@ -139,7 +142,7 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 			Yes:    app.Yes,
 		}, in, out, stderr)
 	}
-	if command == "files lint" || command == "files refresh" {
+	if command == "files lint" || command == "files refresh" || command == "files status" {
 		return runFiles(command, app.Files, app.DataDir, in, out, stderr)
 	}
 	if command == "cfg lint" {

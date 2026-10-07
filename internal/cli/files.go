@@ -31,9 +31,12 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	}
 	repositoryID := options.Lint.RepositoryID
 	updateSource := false
-	if command == "files refresh" {
+	switch command {
+	case "files refresh":
 		repositoryID = options.Refresh.RepositoryID
 		updateSource = options.Refresh.UpdateSource
+	case "files status":
+		repositoryID = options.Status.RepositoryID
 	}
 	filesPath, err := manifest.FilesPath()
 	if err != nil {
@@ -58,7 +61,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		return internalError(err)
 	}
 	ctx := context.Background()
-	if command == "files refresh" {
+	if command == "files refresh" || command == "files status" {
 		var release func()
 		ctx, release, err = installed.BeginMutation(ctx)
 		if err != nil {
@@ -68,7 +71,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		if err = installed.CheckPendingRecovery(); err != nil {
 			return internalError(err)
 		}
-		if updateSource {
+		if command == "files refresh" && updateSource {
 			if _, err = chezmoi.SyncSource(ctx, config.Configs.Repository, confirmReplacement(in, stderr)); err != nil {
 				return classifyAcquisitionError(err)
 			}
@@ -150,6 +153,14 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	if err = published.Err(); err != nil {
 		return checkedInputError(fmt.Errorf("policy was published, but post-publication verification failed: %w", err))
 	}
+	if command == "files status" {
+		inventory, inventoryErr := chezmoi.Inventory(ctx, source, policy)
+		if inventoryErr != nil {
+			return classifyPolicyError(inventoryErr)
+		}
+		warnings := hasFileWarnings(files) || hasFileWarnings(candidate) || hasFileWarnings(published)
+		return printFilesStatus(out, inventory, warnings)
+	}
 	_, err = fmt.Fprint(out, "Files policy: valid\nPublication: refreshed and verified\n")
 	if err != nil {
 		return internalError(err)
@@ -164,6 +175,15 @@ func printFileDiagnostics(out io.Writer, model manifest.FileModel) error {
 		}
 	}
 	return nil
+}
+
+func hasFileWarnings(model manifest.FileModel) bool {
+	for _, diagnostic := range model.Diagnostics {
+		if diagnostic.Severity == manifest.FileWarning {
+			return true
+		}
+	}
+	return false
 }
 
 func checkedInputError(err error) error {

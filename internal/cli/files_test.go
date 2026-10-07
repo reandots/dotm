@@ -179,7 +179,7 @@ func configurationManifest(repository, applications string) string {
 }
 
 func (s *FilesCLISuite) TestFilesCommandsRequireRepositoryID() {
-	for _, args := range [][]string{{"files", "lint"}, {"files", "refresh"}} {
+	for _, args := range [][]string{{"files", "lint"}, {"files", "refresh"}, {"files", "status"}} {
 		_, err := s.run(args...)
 		s.Require().Error(err)
 		s.Equal(3, cli.ExitCode(err))

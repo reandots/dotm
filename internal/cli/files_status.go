@@ -1,0 +1,155 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"dotm/internal/chezmoi"
+)
+
+func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings bool) error {
+	var local, pending, unknown []chezmoi.InventoryEntry
+	for _, entry := range inventory.Entries {
+		if !entry.Managed {
+			unknown = append(unknown, entry)
+		} else if entry.Local != ' ' && entry.Local != 0 {
+			local = append(local, entry)
+		} else if entry.Pending != ' ' && entry.Pending != 0 {
+			pending = append(pending, entry)
+		}
+	}
+
+	color := statusColor(out)
+	if len(local)+len(pending)+len(unknown) == 0 {
+		message := "Filesystem status: clean"
+		if warnings {
+			message = "No filesystem findings (policy warnings were reported)"
+		}
+		_, err := fmt.Fprintln(out, message)
+		return err
+	}
+
+	printGroup := func(title, hint string, entries []chezmoi.InventoryEntry, shade string) error {
+		if len(entries) == 0 {
+			return nil
+		}
+		if !color {
+			shade = ""
+		}
+		end := ""
+		if shade != "" {
+			end = reset
+		}
+		if _, err := fmt.Fprintf(out, "%s%s%s\n", shade, title, end); err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			label := "changed"
+			state := entry.Local
+			if state == ' ' || state == 0 {
+				state = entry.Pending
+			}
+			switch state {
+			case 'M':
+				label = "modified"
+			case 'A', '?':
+				label = "added"
+			case 'D':
+				label = "deleted"
+			default:
+				if !entry.Managed {
+					label = "added"
+				}
+			}
+			typeName := entry.Type
+			if typeName == "" {
+				typeName = "other"
+			}
+			entryColor := ""
+			if color {
+				entryColor = yellow
+				if !entry.Managed {
+					entryColor = red
+				}
+			}
+			entryReset := ""
+			if entryColor != "" {
+				entryReset = reset
+			}
+			_, writeErr := fmt.Fprintf(out, "  %s%-8s %-9s %q%s", entryColor, label, typeName, entry.Path, entryReset)
+			if writeErr != nil {
+				return writeErr
+			}
+			if entry.Managed {
+				if entry.Local != ' ' && entry.Local != 0 && entry.Pending != ' ' && entry.Pending != 0 {
+					_, pendingErr := fmt.Fprintf(out, " (pending chezmoi change: %s)", statusLabel(entry.Pending))
+					if pendingErr != nil {
+						return pendingErr
+					}
+				}
+				if len(entry.Applications) != 0 {
+					if _, err := fmt.Fprintf(out, " [owners: %s]", strings.Join(entry.Applications, ", ")); err != nil {
+						return err
+					}
+				}
+			}
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(out, "  %s\n\n", hint); err != nil {
+			return err
+		}
+		return nil
+	}
+	localHint := "Review with `chezmoi diff`; save local files with `chezmoi add` or stop tracking a deleted file " +
+		"with `chezmoi forget`. Direct `chezmoi apply` may overwrite local changes; " +
+		"dotm's guarded apply does not discard them."
+	if err := printGroup("Local changes", localHint, local, yellow); err != nil {
+		return err
+	}
+	pendingHint := "Review desired changes with `chezmoi diff`."
+	if err := printGroup("Pending changes from chezmoi", pendingHint, pending, yellow); err != nil {
+		return err
+	}
+	unknownHint := "Acknowledge retained data with native ignores or dotm unmanaged declarations. " +
+		"To track a profile-excluded path, select its owning profile first, then use `chezmoi add`."
+	return printGroup("Untracked files", unknownHint, unknown, red)
+}
+
+func statusLabel(state byte) string {
+	switch state {
+	case 'M':
+		return "modified"
+	case 'A', '?':
+		return "added"
+	case 'D':
+		return "deleted"
+	default:
+		return "changed"
+	}
+}
+
+func statusColor(out io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	writer, ok := out.(*checkedWriter)
+	if ok {
+		out = writer.Writer
+	}
+	file, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+const (
+	yellow = "\x1b[1;33m"
+	red    = "\x1b[1;31m"
+	reset  = "\x1b[0m"
+)
