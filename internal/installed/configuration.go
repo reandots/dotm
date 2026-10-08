@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 
 	"dotm/internal/chezmoi"
@@ -17,6 +19,9 @@ import (
 type ConfigurationOptions struct {
 	Source             *manifest.ConfigurationSource
 	ConfirmReplacement chezmoi.ConfirmReplacement
+	Data               *manifest.Data
+	Configuration      string
+	SelectionPath      string
 }
 
 type StageStatus string
@@ -48,6 +53,8 @@ type ConfigurationResult struct {
 	Applications []ConfigurationApplication
 	Source       chezmoi.SourceResult
 	SourceStage  StageResult
+	PolicyStage  StageResult
+	Policy       chezmoi.PolicyRefreshResult
 	Apply        chezmoi.ApplyResult
 	Severity     Severity
 }
@@ -84,7 +91,9 @@ func configure(
 	stderr io.Writer,
 	options ConfigurationOptions,
 ) (Report, error) {
-	result := ConfigurationResult{SourceStage: StageResult{Status: StageSkipped}}
+	result := ConfigurationResult{
+		SourceStage: StageResult{Status: StageSkipped}, PolicyStage: StageResult{Status: StageSkipped},
+	}
 	if len(desired.Targets) != 0 && (options.Source == nil || options.Source.Backend != "chezmoi" ||
 		strings.TrimSpace(options.Source.Repository) == "") {
 		result.Severity = SeverityInternal
@@ -111,6 +120,7 @@ func configure(
 		}
 	}
 	var failures []error
+	failureSeverity := SeverityConfiguration
 	var blocked []string
 	configuredHooks := false
 	for i, app := range desired.Applications {
@@ -164,6 +174,29 @@ func configure(
 			result.SourceStage = StageResult{Status: StageFailed, Err: globalErr}
 			result.Apply.Targets = unappliedTargets(desired.Targets, result.Applications, byID, globalErr.Error())
 		} else {
+			var input chezmoi.PolicyInput
+			if options.Data == nil {
+				globalErr = errors.New("configuration policy requires the complete catalog")
+				failureSeverity = SeverityInternal
+			} else {
+				input, globalErr = chezmoi.PolicyInputFor(options.Data, manifest.Configuration{
+					Name: options.Configuration, Apps: desiredApplicationIDs(desired), Configs: options.Source,
+				}, options.SelectionPath)
+				if globalErr == nil {
+					result.Policy, globalErr = chezmoi.RefreshPolicy(ctx, result.Source.Path, input)
+				}
+			}
+			result.PolicyStage = StageResult{Status: StageSuccess}
+			if globalErr != nil {
+				if policyHostFailure(globalErr) {
+					failureSeverity = SeverityInternal
+				}
+				globalErr = fmt.Errorf("refresh configuration files policy: %w", globalErr)
+				result.PolicyStage = StageResult{Status: StageFailed, Err: globalErr}
+				result.Apply.Targets = unappliedTargets(desired.Targets, result.Applications, byID, globalErr.Error())
+			}
+		}
+		if globalErr == nil {
 			result.Apply, globalErr = chezmoi.Apply(ctx, result.Source.Path, desired.Targets, blocked)
 			if globalErr != nil {
 				globalErr = fmt.Errorf("apply configuration source: %w", globalErr)
@@ -225,8 +258,8 @@ func configure(
 	}
 	var resultErr error
 	if len(failures) != 0 {
-		result.Severity = SeverityConfiguration
-		resultErr = operationError(SeverityConfiguration, errors.Join(failures...))
+		result.Severity = failureSeverity
+		resultErr = operationError(failureSeverity, errors.Join(failures...))
 	}
 	if configuredHooks {
 		after, inspectErr := Inspect(ctx, desired)
@@ -239,6 +272,23 @@ func configure(
 	}
 	current.Configuration = result
 	return current, resultErr
+}
+
+func desiredApplicationIDs(desired manifest.Resolved) []string {
+	ids := make([]string, 0, len(desired.Applications))
+	for _, app := range desired.Applications {
+		ids = append(ids, app.ID)
+	}
+	return ids
+}
+
+func policyHostFailure(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrPermission) {
+		return true
+	}
+	var pathErr *os.PathError
+	return errors.As(err, &pathErr) && !errors.Is(pathErr, os.ErrNotExist)
 }
 
 func failedDependencies(

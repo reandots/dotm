@@ -101,13 +101,13 @@ func (s *FilesCLISuite) run(args ...string) (string, error) {
 }
 
 func (s *FilesCLISuite) TestRefreshRepairsStalePolicyAndLintIsReadOnly() {
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err := s.run("files", "refresh")
 	s.Require().NoError(err, output)
 	s.Contains(output, "Publication: refreshed and verified")
 	published, err := os.ReadFile(s.policyPath)
 	s.Require().NoError(err)
 
-	lintOutput, err := s.run("files", "lint", "--repository-id", "dotm-example")
+	lintOutput, err := s.run("files", "lint")
 	s.Require().NoError(err, lintOutput)
 	afterLint, err := os.ReadFile(s.policyPath)
 	s.Require().NoError(err)
@@ -116,10 +116,10 @@ func (s *FilesCLISuite) TestRefreshRepairsStalePolicyAndLintIsReadOnly() {
 	s.ErrorIs(err, os.ErrNotExist, "local refresh and lint must not fetch")
 
 	s.write(s.policyPath, `{}`)
-	_, err = s.run("files", "lint", "--repository-id", "dotm-example")
+	_, err = s.run("files", "lint")
 	s.Require().Error(err)
 	s.Equal(1, cli.ExitCode(err))
-	output, err = s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err = s.run("files", "refresh")
 	s.Require().NoError(err, output)
 	fixed, err := os.ReadFile(s.policyPath)
 	s.Require().NoError(err)
@@ -128,7 +128,7 @@ func (s *FilesCLISuite) TestRefreshRepairsStalePolicyAndLintIsReadOnly() {
 
 func (s *FilesCLISuite) TestExplicitSourceUpdateRefusesDirtyCheckout() {
 	s.write(filepath.Join(s.source, "dirty"), "uncommitted")
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example", "--update-source")
+	output, err := s.run("files", "refresh", "--update-source")
 	s.Require().Error(err, output)
 	s.Equal(1, cli.ExitCode(err))
 	contents, readErr := os.ReadFile(filepath.Join(s.source, "dirty"))
@@ -139,7 +139,7 @@ func (s *FilesCLISuite) TestExplicitSourceUpdateRefusesDirtyCheckout() {
 func (s *FilesCLISuite) TestRefreshBlocksPendingPackageRecoveryWithoutNix() {
 	journal := filepath.Join(os.Getenv("XDG_STATE_HOME"), "dotm", "update-recovery.json")
 	s.write(journal, `{}`)
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err := s.run("files", "refresh")
 	s.Require().Error(err, output)
 	s.Equal(3, cli.ExitCode(err))
 	s.Contains(err.Error(), "recover it before files refresh")
@@ -161,7 +161,7 @@ func (s *FilesCLISuite) TestRefreshRejectsNativeNegationBeforePublishing() {
 	s.write(filepath.Join(s.dataDir, "configurations.toml"), configurationManifest(s.remote, "[\"cache\"]"))
 	_, removeErr := os.Stat(s.policyPath)
 	s.ErrorIs(removeErr, os.ErrNotExist)
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err := s.run("files", "refresh")
 	s.Require().Error(err, output)
 	s.Equal(1, cli.ExitCode(err))
 	_, statErr := os.Stat(s.policyPath)
@@ -178,20 +178,11 @@ func configurationManifest(repository, applications string) string {
 		strconvQuote(repository) + "\n"
 }
 
-func (s *FilesCLISuite) TestFilesCommandsRequireRepositoryID() {
-	for _, args := range [][]string{{"files", "lint"}, {"files", "refresh"}, {"files", "status"}} {
-		_, err := s.run(args...)
-		s.Require().Error(err)
-		s.Equal(3, cli.ExitCode(err))
-		s.NoFileExists(s.policyPath)
-	}
-}
-
 func (s *FilesCLISuite) TestWarningOnlyDeclarationsStillRefreshPolicy() {
 	s.write(filepath.Join(s.dataDir, "catalog.toml"),
 		"[cache]\nunmanaged = [\"~/.config/cache\", \"~/.config/cache/child\"]\n")
 	s.write(filepath.Join(s.dataDir, "configurations.toml"), configurationManifest(s.remote, "[\"cache\"]"))
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err := s.run("files", "refresh")
 	s.Require().NoError(err, output)
 	s.Contains(output, "warning:")
 	s.Contains(output, "Publication: refreshed and verified")
@@ -200,12 +191,12 @@ func (s *FilesCLISuite) TestWarningOnlyDeclarationsStillRefreshPolicy() {
 func (s *FilesCLISuite) TestManifestInputAndHostIOHaveDistinctExitCodes() {
 	catalog := filepath.Join(s.dataDir, "catalog.toml")
 	s.Require().NoError(os.Remove(catalog))
-	output, err := s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err := s.run("files", "refresh")
 	s.Require().Error(err, output)
 	s.Equal(1, cli.ExitCode(err), "missing checked input is a configuration failure")
 
 	s.Require().NoError(os.Mkdir(catalog, 0o700))
-	output, err = s.run("files", "refresh", "--repository-id", "dotm-example")
+	output, err = s.run("files", "refresh")
 	s.Require().Error(err, output)
 	s.Equal(3, cli.ExitCode(err), "catalog read I/O failures are internal")
 }

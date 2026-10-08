@@ -29,31 +29,16 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	if config.Configs == nil || config.Configs.Backend != "chezmoi" {
 		return checkedInputError(errors.New("selected configuration requires a configured chezmoi source"))
 	}
-	repositoryID := options.Lint.RepositoryID
-	updateSource := false
-	switch command {
-	case "files refresh":
-		repositoryID = options.Refresh.RepositoryID
-		updateSource = options.Refresh.UpdateSource
-	case "files status":
-		repositoryID = options.Status.RepositoryID
-	}
-	filesPath, err := manifest.FilesPath()
-	if err != nil {
-		return internalError(err)
-	}
-	files, err := data.Files(config.Apps, filesPath)
+	updateSource := command == "files refresh" && options.Refresh.UpdateSource
+	input, err := chezmoi.PolicyInputFor(data, config, selectionPath)
 	if err != nil {
 		return classifyCheckedOrHostError(err)
 	}
+	files := input.Files
 	if err = printFileDiagnostics(out, files); err != nil {
 		return internalError(err)
 	}
 	if err = files.Err(); err != nil {
-		return checkedInputError(err)
-	}
-	resolved, err := data.Resolve(config.Apps)
-	if err != nil {
 		return checkedInputError(err)
 	}
 	source, err := chezmoi.SourcePath()
@@ -92,26 +77,14 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	if err = chezmoi.ValidateRepository(ctx, source, config.Configs.Repository); err != nil {
 		return classifyPolicyError(err)
 	}
-	applications := make([]string, 0, len(resolved.Applications))
-	for _, application := range resolved.Applications {
-		applications = append(applications, application.ID)
-	}
-	input := chezmoi.PolicyInput{
-		RepositoryID: repositoryID, Configuration: config.Name,
-		SelectionPath: selectionPath, Applications: applications, Files: files,
-	}
-	policy, err := chezmoi.CompilePolicy(ctx, source, input)
-	if err != nil {
-		return classifyPolicyError(err)
-	}
-	path, err := chezmoi.PolicyPath(policy)
-	if err != nil {
-		return internalError(err)
-	}
-	if _, err = fmt.Fprintf(out, "Policy path: %s\n", path); err != nil {
-		return internalError(err)
-	}
 	if command == "files lint" {
+		policy, compileErr := chezmoi.CompilePolicy(ctx, source, input)
+		if compileErr != nil {
+			return classifyPolicyError(compileErr)
+		}
+		if err = printPolicyPath(out, policy); err != nil {
+			return internalError(err)
+		}
 		model, checkErr := chezmoi.CheckPolicy(ctx, source, policy, true)
 		if checkErr != nil {
 			return classifyPolicyError(checkErr)
@@ -129,36 +102,25 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		}
 		return nil
 	}
-	candidate, err := chezmoi.CheckPolicy(ctx, source, policy, false)
-	if err != nil {
-		return classifyPolicyError(err)
+	refreshed, refreshErr := chezmoi.RefreshPolicy(ctx, source, input)
+	if refreshed.Policy.SourceDir != "" {
+		if err = printPolicyPath(out, refreshed.Policy); err != nil {
+			return internalError(err)
+		}
 	}
-	if err = printFileDiagnostics(out, candidate); err != nil {
+	effective := manifest.FileModel{Diagnostics: refreshed.Diagnostics[len(files.Diagnostics):]}
+	if err = printFileDiagnostics(out, effective); err != nil {
 		return internalError(err)
 	}
-	if err = candidate.Err(); err != nil {
-		return checkedInputError(err)
-	}
-	if err = chezmoi.PublishPolicy(ctx, source, policy); err != nil {
-		return classifyPolicyError(err)
-	}
-	published, err := chezmoi.CheckPolicy(ctx, source, policy, true)
-	if err != nil {
-		return classifyPolicyError(fmt.Errorf(
-			"policy was published, but post-publication verification failed: %w", err))
-	}
-	if err = printFileDiagnostics(out, published); err != nil {
-		return internalError(err)
-	}
-	if err = published.Err(); err != nil {
-		return checkedInputError(fmt.Errorf("policy was published, but post-publication verification failed: %w", err))
+	if refreshErr != nil {
+		return classifyPolicyError(refreshErr)
 	}
 	if command == "files status" {
-		inventory, inventoryErr := chezmoi.Inventory(ctx, source, policy)
+		inventory, inventoryErr := chezmoi.Inventory(ctx, source, refreshed.Policy)
 		if inventoryErr != nil {
 			return classifyPolicyError(inventoryErr)
 		}
-		warnings := hasFileWarnings(files) || hasFileWarnings(candidate) || hasFileWarnings(published)
+		warnings := hasFileWarnings(files) || hasFileWarnings(effective)
 		return printFilesStatus(out, inventory, warnings)
 	}
 	_, err = fmt.Fprint(out, "Files policy: valid\nPublication: refreshed and verified\n")
@@ -166,6 +128,15 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		return internalError(err)
 	}
 	return nil
+}
+
+func printPolicyPath(out io.Writer, policy chezmoi.Policy) error {
+	path, err := chezmoi.PolicyPath(policy)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Policy path: %s\n", path)
+	return err
 }
 
 func printFileDiagnostics(out io.Writer, model manifest.FileModel) error {

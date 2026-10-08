@@ -20,7 +20,7 @@ import (
 
 // PolicyInput identifies the selected dotm configuration independently of package readiness.
 type PolicyInput struct {
-	RepositoryID  string
+	Repository    string
 	Configuration string
 	SelectionPath string
 	Applications  []string
@@ -37,7 +37,7 @@ type PolicyExclusion struct {
 // Freshness is a local snapshot, not a guarantee about environment-dependent templates.
 type Policy struct {
 	SchemaVersion int               `json:"schemaVersion"`
-	RepositoryID  string            `json:"repositoryID"`
+	Repository    string            `json:"repository"`
 	SourceDir     string            `json:"sourceDir"`
 	DestDir       string            `json:"destDir"`
 	ConfigFile    string            `json:"configFile"`
@@ -68,8 +68,8 @@ func PolicyPath(policy Policy) (string, error) {
 // It neither fetches nor publishes, and deliberately bypasses any stale published policy.
 func CompilePolicy(ctx context.Context, source string, input PolicyInput) (Policy, error) {
 	var policy Policy
-	if input.RepositoryID == "" || input.Configuration == "" {
-		return policy, fmt.Errorf("policy requires repository ID and dotm configuration identity")
+	if input.Repository == "" || input.Configuration == "" {
+		return policy, fmt.Errorf("policy requires configured repository URL and dotm configuration identity")
 	}
 	if err := input.Files.Err(); err != nil {
 		return policy, err
@@ -80,6 +80,13 @@ func CompilePolicy(ctx context.Context, source string, input PolicyInput) (Polic
 	}
 	if len(validation.Diagnostics) != 0 {
 		return policy, fmt.Errorf("policy source validation failed: %v", validation.Diagnostics)
+	}
+	if err = ValidateRepository(ctx, source, input.Repository); err != nil {
+		return policy, fmt.Errorf("policy source does not match configured repository: %w", err)
+	}
+	origin, err := git(ctx, source, "remote", "get-url", "--all", "origin")
+	if err != nil {
+		return policy, fmt.Errorf("inspect source origin: %w", err)
 	}
 	command := applyCommand{source: source}
 	native := `{"dotm":{"nativeOnly":true}}`
@@ -110,8 +117,8 @@ func CompilePolicy(ctx context.Context, source string, input PolicyInput) (Polic
 	if effective.Mode != "file" {
 		return policy, fmt.Errorf("files policy requires chezmoi mode=file")
 	}
+	policy.Repository = origin
 	policy.SchemaVersion = 1
-	policy.RepositoryID = input.RepositoryID
 	policy.Configuration = input.Configuration
 	policy.Source, err = filepath.Abs(source)
 	if err != nil {
@@ -429,9 +436,17 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 		return result, probeErr
 	}
 	if !consumed {
+		path, pathErr := PolicyPath(candidate)
+		if pathErr != nil {
+			return result, pathErr
+		}
 		result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-			Severity: manifest.FileError, Message: "root ignore template does not consume the bound external policy",
+			Severity: manifest.FileError,
+			Message: fmt.Sprintf("root ignore template does not consume the bound external policy; "+
+				"deliberately adopt examples/chezmoi-policy/.chezmoiignore and configure "+
+				"chezmoi [data.dotm] policyFile = %q; dotm does not edit user integration files", path),
 		})
+		return result, nil
 	}
 	command := applyCommand{source: source}
 	nativeData := `{"dotm":{"nativeOnly":true}}`
@@ -568,6 +583,12 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 // verifyPolicyConsumption uses an isolated scratch policy carrying a unique
 // literal marker. It never changes published state, source, or destinations.
 func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy Policy) (bool, []byte, error) {
+	if _, err := os.Lstat(filepath.Join(policy.SourceDir, ".chezmoiignore")); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
 	marker := ".dotm-policy-probe-" + policy.Freshness
 	probe := policy
 	probe.Patterns = append(append([]string(nil), policy.Patterns...), marker)

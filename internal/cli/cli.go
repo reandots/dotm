@@ -58,16 +58,11 @@ type (
 )
 
 type filesCmd struct {
-	Lint struct {
-		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
-	} `cmd:"" help:"Check declarations, trusted templates, and integration without persistent changes"`
+	Lint    struct{} `cmd:"" help:"Check declarations, trusted templates, and integration without persistent changes"`
 	Refresh struct {
-		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
-		UpdateSource bool   `name:"update-source" help:"Acquire or update the shared checkout first (may fetch; dirty work is never discarded)"`
+		UpdateSource bool `name:"update-source" help:"Acquire or update the shared checkout first (may fetch; dirty work is never discarded)"`
 	} `cmd:"" help:"Publish and verify files policy; evaluates templates, --update-source may fetch"`
-	Status struct {
-		RepositoryID string `name:"repository-id" required:"" help:"Stable ID matching the repository's opt-in files template"`
-	} `cmd:"" help:"Refresh local files policy and inspect filesystem status"`
+	Status struct{} `cmd:"" help:"Refresh local files policy and inspect filesystem status"`
 }
 
 type removeExtrasCmd struct{}
@@ -270,6 +265,7 @@ func (app *cli) runOperations(
 	var failures []error
 	options := installed.ConfigurationOptions{
 		Source: config.Configs, ConfirmReplacement: confirmReplacement(in, stderr),
+		Data: data, Configuration: config.Name, SelectionPath: selectionPath,
 	}
 	for _, step := range steps {
 		if !step.requested {

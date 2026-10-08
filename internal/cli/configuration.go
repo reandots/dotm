@@ -118,6 +118,10 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 	if result.Source.Backup != "" {
 		fmt.Fprintf(out, "Retained source backup: %s\n", result.Source.Backup)
 	}
+	fmt.Fprintf(out, "Files policy stage: %s\n", result.PolicyStage.Status)
+	for _, diagnostic := range result.Policy.Diagnostics {
+		fmt.Fprintln(out, diagnostic)
+	}
 	for _, app := range result.Applications {
 		fmt.Fprintf(out, "  %s: ", app.ID)
 		if !app.Eligible {

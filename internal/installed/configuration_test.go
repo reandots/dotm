@@ -2,6 +2,7 @@ package installed
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -14,7 +15,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ConfigurationLifecycleSuite struct{ suite.Suite }
+type ConfigurationLifecycleSuite struct {
+	suite.Suite
+	data *manifest.Data
+}
 
 func TestConfigurationLifecycleSuite(t *testing.T) {
 	suite.Run(t, new(ConfigurationLifecycleSuite))
@@ -43,6 +47,14 @@ func (s *ConfigurationLifecycleSuite) fixtureAt(
 	s.T().Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 	s.T().Setenv("PATH", "")
 	data := manifest.Data{CatalogDir: dir, Apps: apps}
+	for _, app := range apps {
+		for i, path := range app.Configs {
+			data.FileDeclarations = append(data.FileDeclarations, manifest.FileDeclaration{
+				Application: app.ID, Field: "configs", Index: i, Input: path, Path: path,
+			})
+		}
+	}
+	s.data = &data
 	desired, err := data.Resolve(roots)
 	s.Require().NoError(err)
 	return desired
@@ -85,6 +97,16 @@ func (s *ConfigurationLifecycleSuite) repository(dir string, files map[string]st
 	}
 	git("config", "user.name", "Lifecycle Test")
 	git("config", "user.email", "lifecycle@example.invalid")
+	template, err := os.ReadFile(filepath.Join("..", "..", "examples", "chezmoi-policy", ".chezmoiignore"))
+	s.Require().NoError(err)
+	files[".chezmoiignore"] = string(template)
+	configFile := filepath.Join(dir, "config", "chezmoi", "chezmoi.toml")
+	source := filepath.Join(dir, "data", "chezmoi")
+	policyPath, err := chezmoi.PolicyPath(chezmoi.Policy{ConfigFile: configFile, SourceDir: source, DestDir: dir})
+	s.Require().NoError(err)
+	s.Require().NoError(os.MkdirAll(filepath.Dir(configFile), 0o700))
+	s.Require().NoError(os.WriteFile(configFile, []byte(fmt.Sprintf(
+		"sourceDir = %q\ndestDir = %q\n[data.dotm]\npolicyFile = %q\n", source, dir, policyPath)), 0o600))
 	for name, content := range files {
 		path := filepath.Join(work, name)
 		s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
@@ -98,7 +120,10 @@ func (s *ConfigurationLifecycleSuite) repository(dir string, files map[string]st
 }
 
 func (s *ConfigurationLifecycleSuite) sourceOptions(repository string) ConfigurationOptions {
-	return ConfigurationOptions{Source: &manifest.ConfigurationSource{Backend: "chezmoi", Repository: repository}}
+	return ConfigurationOptions{
+		Source: &manifest.ConfigurationSource{Backend: "chezmoi", Repository: repository},
+		Data:   s.data, Configuration: "test",
+	}
 }
 
 func (s *ConfigurationLifecycleSuite) configure(desired manifest.Resolved) (Report, error) {
@@ -240,7 +265,7 @@ func (s *ConfigurationLifecycleSuite) TestApplicationFailureStillAppliesConsumer
 	s.ErrorIs(statErr, os.ErrNotExist)
 }
 
-func (s *ConfigurationLifecycleSuite) TestBlockedNarrowAndSharedTargetsPreserveOwnership() {
+func (s *ConfigurationLifecycleSuite) TestOverlappingOwnersBlockApplicationBeforeDestinationWrites() {
 	dir := s.T().TempDir()
 	config := filepath.Join(dir, ".config")
 	desired := s.fixtureAt(dir, map[string]manifest.Application{
@@ -261,21 +286,14 @@ func (s *ConfigurationLifecycleSuite) TestBlockedNarrowAndSharedTargetsPreserveO
 	s.hook(dir, "shared-pre", "printf 'shared failed\\n' >> hooks.log; exit 1")
 	report, err := Configure(context.Background(), desired, io.Discard, s.sourceOptions(remote))
 	s.Error(err)
-	s.Require().FileExists(filepath.Join(config, "sibling.conf"))
-	s.Require().FileExists(filepath.Join(config, "shared.conf"))
+	s.NoFileExists(filepath.Join(config, "sibling.conf"))
+	s.NoFileExists(filepath.Join(config, "shared.conf"))
 	s.NoFileExists(filepath.Join(config, "child.conf"))
 	s.Equal(StageFailed, configurationApplication(s, report, "narrow").Pre.Status)
 	s.Equal(StageFailed, configurationApplication(s, report, "shared-blocked").Pre.Status)
-	s.Equal(StageSuccess, configurationApplication(s, report, "shared-healthy").Config.Status)
-	childEntry := configurationEntry(s, report, filepath.Join(config, "child.conf"))
-	s.Contains(childEntry.Applications, "broad")
-	s.Contains(childEntry.Applications, "narrow")
-	s.NotContains(childEntry.SelectedApplications, "broad")
-	sharedEntry := configurationEntry(s, report, filepath.Join(config, "shared.conf"))
-	s.Contains(sharedEntry.Applications, "shared-blocked")
-	s.Contains(sharedEntry.Applications, "shared-healthy")
-	s.Contains(sharedEntry.SelectedApplications, "shared-healthy")
-	s.NotContains(sharedEntry.SelectedApplications, "shared-blocked")
+	s.Equal(StageFailed, configurationApplication(s, report, "shared-healthy").Config.Status)
+	s.Equal(StageFailed, report.Configuration.PolicyStage.Status)
+	s.ErrorContains(err, "overlapping declarations")
 }
 
 func (s *ConfigurationLifecycleSuite) TestInvalidSourceBlocksAllPostHooksAfterPreEffects() {
@@ -302,15 +320,31 @@ func (s *ConfigurationLifecycleSuite) TestInvalidSourceBlocksAllPostHooksAfterPr
 	s.NoFileExists(config)
 }
 
-func configurationEntry(s *ConfigurationLifecycleSuite, report Report, path string) chezmoi.EntryResult {
-	s.T().Helper()
-	for _, entry := range report.Configuration.Apply.Entries {
-		if entry.Path == path {
-			return entry
-		}
-	}
-	s.FailNow("configuration entry missing", "%s", path)
-	return chezmoi.EntryResult{}
+func (s *ConfigurationLifecycleSuite) TestPolicyFailureKeepsCommittedPackageUpdate() {
+	dir := s.T().TempDir()
+	target := filepath.Join(dir, ".config", "tools")
+	desired := s.fixtureAt(dir, map[string]manifest.Application{
+		"tools": {ID: "tools", Packages: []manifest.Package{{Attr: "hello"}}, Configs: []string{target}},
+	}, "tools")
+	remote := s.repository(dir, map[string]string{"dot_config/tools": "managed\n"})
+	recovery := &UpdateRecoverySuite{}
+	recovery.SetT(s.T())
+	state, profile, source, _ := recovery.updateFixture(false)
+	s.T().Setenv("PATH", filepath.Join(filepath.Dir(state), "bin")+":/usr/bin:/bin")
+	filesPath, err := manifest.FilesPath()
+	s.Require().NoError(err)
+	s.Require().NoError(os.MkdirAll(filepath.Dir(filesPath), 0o700))
+	s.Require().NoError(os.WriteFile(filesPath, []byte("[unmanaged]\n\"~/.config\" = [\"tools\"]\n"), 0o600))
+	report, err := Update(context.Background(), desired, io.Discard, s.sourceOptions(remote))
+	s.Require().Error(err)
+	s.Equal(StageFailed, report.Configuration.PolicyStage.Status)
+	s.Equal(SeverityConfiguration, report.Configuration.Severity)
+	s.NoFileExists(target)
+	link, readErr := os.Readlink(profile)
+	s.Require().NoError(readErr)
+	s.Equal("profile-2-link", link)
+	s.Equal(recoveryAdvancedLock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	recovery.assertJournalCleared(state)
 }
 
 func configurationApplication(s *ConfigurationLifecycleSuite, report Report, id string) ConfigurationApplication {

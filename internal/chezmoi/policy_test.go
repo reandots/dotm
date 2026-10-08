@@ -79,7 +79,7 @@ func (s *policySuite) commit() {
 
 func (s *policySuite) input(config string, declarations ...manifest.FileDeclaration) PolicyInput {
 	return PolicyInput{
-		RepositoryID: "dotm-example", Configuration: config,
+		Repository: filepath.Join(s.root, "remote.git"), Configuration: config,
 		Files: manifest.FileModel{Declarations: declarations},
 	}
 }
@@ -339,4 +339,37 @@ func (s *policySuite) TestCheckPolicyUsesCombinedPatternSetDefaults() {
 	}
 	_, statErr := os.Lstat(path)
 	s.Require().True(os.IsNotExist(statErr), "candidate inspection must not publish policy")
+}
+
+func (s *policySuite) TestCompilePolicyRejectsDifferentRepositoryBeforeTemplates() {
+	s.write(filepath.Join(s.source, ".chezmoiignore"), `{{ fail "trusted template was evaluated" }}`)
+	input := s.input("work")
+	input.Repository = filepath.Join(s.root, "other.git")
+	_, err := CompilePolicy(context.Background(), s.checkout, input)
+	s.ErrorContains(err, "does not match configured repository")
+	s.NotContains(err.Error(), "trusted template was evaluated")
+}
+
+func (s *policySuite) TestPolicyAcceptsFileURLAliasAndRejectsReplacedOrigin() {
+	s.integrate()
+	s.write(filepath.Join(s.source, "hidden"), "hidden")
+	s.commit()
+	input := s.input("work", manifest.FileDeclaration{
+		Field: "unmanaged", Path: filepath.Join(s.home, "hidden"), Input: "hidden", Selected: true,
+	})
+	input.Repository = "file://" + filepath.Join(s.root, "remote.git")
+	policy, err := CompilePolicy(context.Background(), s.checkout, input)
+	s.Require().NoError(err)
+	s.Equal(filepath.Join(s.root, "remote.git"), policy.Repository,
+		"the policy template binding uses the effective origin spelling")
+	s.Require().NoError(PublishPolicy(context.Background(), s.checkout, policy))
+	result, err := CheckPolicy(context.Background(), s.checkout, policy, true)
+	s.Require().NoError(err)
+	s.NoError(result.Err())
+	s.NotContains(s.managed(), "hidden")
+
+	replacement := filepath.Join(s.root, "replacement.git")
+	s.git("init", "--bare", "--quiet", replacement)
+	s.git("-C", s.checkout, "remote", "set-url", "origin", replacement)
+	s.Contains(s.managed(), "hidden", "a policy bound to the previous origin must not filter")
 }
