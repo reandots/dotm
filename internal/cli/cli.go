@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 )
 
 type cli struct {
-	DataDir         string `help:"directory containing catalog.toml and configurations.toml" default:"."`
+	DataDir         string `help:"directory containing catalog.toml and configurations.toml (default: XDG_CONFIG_HOME/dotm/data, or ~/.config/dotm/data)"`
 	InstallMissing  bool   `name:"install" short:"i" help:"Run hooks and install missing desired applications without updating installed entries"`
 	UpdateInstalled bool   `name:"update" short:"u" help:"Run hooks, update installed desired applications and complete their dependencies"`
 	RemoveExtra     bool   `name:"remove-extras" short:"r" help:"Remove extras with individual confirmation after update/install"`
@@ -137,11 +138,18 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 			Yes:    app.Yes,
 		}, in, out, stderr)
 	}
-	if command == "files lint" || command == "files refresh" || command == "files status" {
-		return runFiles(command, app.Files, app.DataDir, in, out, stderr)
-	}
 	if command == "cfg lint" {
 		return lintSource(app.Cfg.Lint.Source, out)
+	}
+	if app.DataDir == "" {
+		selectionPath, pathErr := manifest.SelectionPath()
+		if pathErr != nil {
+			return pathErr
+		}
+		app.DataDir = filepath.Join(filepath.Dir(selectionPath), "data")
+	}
+	if command == "files lint" || command == "files refresh" || command == "files status" {
+		return runFiles(command, app.Files, app.DataDir, in, out, stderr)
 	}
 
 	data, err := manifest.Load(app.DataDir)

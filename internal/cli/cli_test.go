@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -76,4 +77,44 @@ func (s *CLISuite) TestCleanupDoesNotRequireManifestsOrSelection() {
 		_, err := os.Lstat(s.stateDir)
 		s.ErrorIs(err, os.ErrNotExist)
 	}
+}
+
+func (s *CLISuite) TestDefaultDataDirectoryKeepsSelectionMachineLocal() {
+	for _, configMode := range []string{"custom-xdg", "home-fallback"} {
+		s.Run(configMode, func() {
+			home := s.T().TempDir()
+			s.T().Setenv("HOME", home)
+			configHome := filepath.Join(home, ".config")
+			if configMode == "custom-xdg" {
+				configHome = filepath.Join(home, "custom-config")
+				s.T().Setenv("XDG_CONFIG_HOME", configHome)
+			} else {
+				s.T().Setenv("XDG_CONFIG_HOME", "")
+			}
+			localDir := filepath.Join(configHome, "dotm")
+			s.Require().NoError(os.MkdirAll(localDir, 0o700))
+			dataDir := filepath.Join(localDir, "data")
+			s.Require().NoError(os.MkdirAll(dataDir, 0o700))
+			for _, name := range []string{"catalog.toml", "configurations.toml"} {
+				content, err := os.ReadFile(filepath.Join(s.dataDir, name))
+				s.Require().NoError(err)
+				s.Require().NoError(os.WriteFile(filepath.Join(dataDir, name), content, 0o600))
+			}
+			s.Require().NoError(os.WriteFile(filepath.Join(localDir, "config.toml"),
+				[]byte("configuration = 'empty'\n"), 0o600))
+			var out bytes.Buffer
+			s.Require().NoError(cli.Run([]string{"show"}, strings.NewReader(""), &out, io.Discard))
+			s.Contains(out.String(), "empty")
+		})
+	}
+}
+
+func (s *CLISuite) TestExplicitDataDirectoryDoesNotRequireValidXDGForListing() {
+	s.T().Setenv("XDG_CONFIG_HOME", "relative-config")
+	var out bytes.Buffer
+	s.Require().NoError(cli.Run([]string{"configs", "--data-dir", s.dataDir},
+		strings.NewReader(""), &out, io.Discard))
+	s.Contains(out.String(), "empty")
+	s.ErrorContains(cli.Run([]string{"configs"}, strings.NewReader(""), io.Discard, io.Discard),
+		"configuration directory must be absolute")
 }
