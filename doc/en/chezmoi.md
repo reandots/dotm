@@ -1,0 +1,77 @@
+# chezmoi, filtering, and file inventory
+
+[Documentation](README.md) · [Русский](../ru/chezmoi.md)
+
+## Ownership and prerequisites
+
+The selected configuration's `[configurations.configs]` names `backend = "chezmoi"` and the Git `repository`. dotm uses one shared checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination. There is no second private chezmoi environment. Git and chezmoi must already be available; chezmoi v2.74.1 is the exercised baseline, not a proven minimum.
+
+Only normal `mode = "file"` is supported. Declared paths must map inside effective `destDir`. Expanding `$XDG_CONFIG_HOME` in a declaration does **not** relocate source `dot_config`: it still maps according to chezmoi's layout. Do not solve this by broadening the destination to `/`; provide a compatible source layout/settings.
+
+## Adopt external policy deliberately
+
+This integration is required before dotm applies configuration targets. It must be owned by your dotfiles/provisioning automation, not an unrecorded manual prerequisite.
+
+1. In your actual dotfiles repository, adopt the inclusion from [examples/chezmoi-policy/.chezmoiignore](../../examples/chezmoi-policy/.chezmoiignore) into the effective source root's `.chezmoiignore`. If using `.chezmoiroot`, place it in that effective root. Preserve existing root and nested native ignore rules; do not replace them with a generated allowlist.
+2. Ensure normal static chezmoi settings select the shared source, correct destination, and `mode = "file"`. Preserve unrelated settings/data.
+3. Run `./dotm files lint` to obtain the calculated **Policy path**. First-use errors about missing policy/integration are expected; do not treat this as successful validation.
+4. In the normal chezmoi configuration (typically `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml`), bind the reported absolute path:
+
+   ```toml
+   [data.dotm]
+   policyFile = "/absolute/path/reported/by/files-lint.json"
+   ```
+
+   Replace the example path. The filename depends on effective configuration-file, source-root, and destination paths; do not copy another machine's hash. A changed binding requires its new path.
+5. Commit/publish source changes and leave the checkout clean before source synchronization. Run `./dotm files refresh` to check and publish locally, then `./dotm files lint` to verify normal integration. If the source is not yet acquired, use `./dotm files refresh --update-source` after configuring the source/settings and integration.
+
+Generated JSON lives outside Git at `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/files/chezmoi/<key>.json`. Never hand-author it. The template binds policy to Git origin URL, effective source/destination/configuration paths, and schema. It reads literal JSON strings, not generated template code. No separate repository ID is required.
+
+With no published policy, standalone chezmoi retains native behavior. With policy, standalone chezmoi uses the **last published selection**, not the current dotm selection automatically. Changes to selection/declarations/source/settings can make policy stale: refresh it. Ordinary add/edit on excluded paths may fail or ignore input; exclusions are not a universal sandbox or an allowlist preventing addition of unrelated files.
+
+## Acquisition and source switches
+
+Install/update/update cfg acquire or fast-forward the source before applying eligible targets. A missing source is staged and validated before activation. Existing sources require a clean standalone nonempty Git checkout, a branch with one origin upstream, and safe source layout. Dirty tracked/index/untracked/ignored content, including empty untracked directories, blocks synchronization. Detached, ahead/diverged, shallow, linked/shared/sparse/submodule checkouts and hidden-index state are rejected. No automatic stash, reset, clean, rebase, or source repair occurs.
+
+A different repository requires a separate prompt. Only a complete lowercase **`yes` followed by newline** approves replacement; other answers, EOF, or unterminated input refuse it. Removal/cleanup `--yes` is unrelated. Before prompting, dotm proves old local objects are published in advertised origin history, conservatively including branches, reflogs, and dangling objects. Unavailable proof blocks replacement. URL identity does not guess SSH/HTTPS equivalence.
+
+Old checkouts are retained in a reported backup path, not deleted automatically. Existing destination files are not removed when switching source/profile. Interrupted handoff requires deliberate recovery; see [troubleshooting](troubleshooting.md).
+
+## Validation and application
+
+```sh
+./dotm cfg lint
+./dotm cfg lint --source /absolute/local/checkout
+./dotm update cfg
+```
+
+`cfg lint` passively checks the **whole** local effective source/settings, even outside selected applications and native ignores. It fetches nothing, evaluates no templates, runs no code, and writes no state. It needs neither manifests nor the chezmoi executable. It rejects run/modify/remove/exact actions, automatic externals, configured hooks and Git autoAdd/autoCommit/autoPush, conflicting sourceDir, `mode=symlink`, dynamic configuration templates, and source directory symlinks. Ordinary trusted file templates/partials and destination `symlink_` entries are distinct and can be supported. Static configuration/data syntax is checked. These are dotm's conservative compatibility limits, not general chezmoi restrictions.
+
+Passing passive validation does not prove template correctness or apply success. Effective file checks/application evaluate trusted templates, whose helpers may execute commands. Git configuration, transport/filter helpers, and credentials are trusted too.
+
+Configuration readiness requires complete application/dependency packages; package-free applications need no installation marker. `update cfg` skips missing-package applications rather than installing packages. Eligible configuration hooks repeat even on unchanged state. An empty target set never becomes an unscoped apply.
+
+Application is per selected managed entry with native conflict protection, never forced overwrite/merge or broad cleanup. Incompatible types and symlink ancestors are conflicts. Local edits, first-adoption differences, and permission differences are preserved; safe independent files may already have changed. Native ignores remain effective. Conflicts block affected/consumer post-hooks, not all independent work. There is no destination/hook rollback.
+
+## File-policy commands
+
+```sh
+./dotm files lint
+./dotm files refresh
+./dotm files refresh --update-source
+./dotm files status
+```
+
+All use the desired dependency closure, independent of installed-package readiness, plus optional [local files.toml](configuration.md). Generated exclusions cover nonselected applications' configs, selected applications' unmanaged data, and local acknowledgements. They are literal roots/subtrees, including future descendants, not a broad allowlist.
+
+`lint` checks declarations, native effective rules, policy freshness/binding, and actual integration without persistent publication. Native `!` rules intersecting generated exclusions fail even for absent paths; wholly native-hidden selected configurations warn. Warnings permit continuation, errors block application. It is not passive lint: templates are evaluated and temporary probes can be created.
+
+`refresh` checks a new candidate without requiring old policy freshness, then atomically replaces its JSON and verifies normal integration. Failure before publication leaves old policy; failure after publication does not roll it back. `--update-source` explicitly adds acquisition/fetch and its safety/confirmation rules. `status` performs the same local refresh but never fetches. Both hold mutation ownership; pending package recovery blocks them without invoking Nix. Read-only lint does not recover.
+
+Install/update/update cfg refresh this policy after pre-configuration hooks and source acquisition, before scoped apply. Policy errors preserve already committed package work.
+
+## Inventory interpretation
+
+`files status` separates **local changes**, **pending chezmoi changes**, and **untracked files**, retaining both status directions and owners. Empty sections are omitted. Terminal output uses styling unless `NO_COLOR` is set; redirected output remains plain, with escaped unusual paths.
+
+Untracked means **unclassified**, not newly created or safe to delete. Classification acknowledges native ignores, selected application unmanaged data, and local exclusions. Other profiles' exclusions do not acknowledge their existing leftovers; unknown siblings under selected config directories remain candidates. Inventory covers HOME and supported XDG roots within effective destination, treats symlinks as leaves, and fails on incomplete collection instead of claiming a clean result. It never applies files or runs application hooks, but it intentionally updates persistent filtering policy and evaluates trusted templates.
