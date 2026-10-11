@@ -36,6 +36,7 @@ Run `just` to list the available commands.
 | `just mod-check` | Check module tidiness without rewriting `go.mod` or `go.sum`. |
 | `just build` | Build the local `./dotm` binary; do not install it. |
 | `just build-release` | Build the same `./dotm` path with `-ldflags="-s -w"`, omitting debugger symbols and DWARF information. |
+| `just install` | Build the release binary and install it to `~/.config/bin/dotm`, creating parent directories and replacing an existing binary. |
 | `just run --data-dir examples apps` | Run the CLI, forwarding arguments after the recipe name. |
 | `just precommit` | Run `lint`, `test`, then `build`, stopping on failure. |
 

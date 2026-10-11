@@ -44,6 +44,10 @@ build:
 build-release:
     go build -ldflags="-s -w" .
 
+# Build and install the release binary, replacing any existing installation.
+install: build-release
+    install -Dm755 ./dotm "$HOME/.config/bin/dotm"
+
 # Run the CLI, forwarding arguments.
 run *args:
     go run . {{args}}
