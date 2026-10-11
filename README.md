@@ -41,4 +41,6 @@ Before deploying, follow [installation and host preparation](doc/en/installation
 | Failures, recovery, and limits | [Troubleshooting](doc/en/troubleshooting.md) | [Устранение проблем](doc/ru/troubleshooting.md) |
 | Tooling, architecture, and checks | [Development](doc/en/development.md) | [Разработка](doc/ru/development.md) |
 
+For AI-assisted end-user operations, use the self-contained [dotm user skill](doc/skills/dotm-user/SKILL.md): application manifests, selections, exclusions, CLI workflows, and recovery, without development rules.
+
 Maintainer contracts and verification records live in the English [knowledge base](.agent/README.md). Public documentation describes supported behavior; acceptance records distinguish exercised environments from unverified ones.
