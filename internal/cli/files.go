@@ -63,16 +63,8 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		}
 	}
 	validation, err := chezmoi.ValidateSource(ctx, source)
-	if err != nil {
+	if err = errors.Join(validation.Err(), err); err != nil {
 		return classifyCheckedOrHostError(err)
-	}
-	for _, diagnostic := range validation.Diagnostics {
-		if _, err = fmt.Fprintf(out, "%s: %s: %s\n", diagnostic.Path, diagnostic.Code, diagnostic.Message); err != nil {
-			return internalError(err)
-		}
-	}
-	if len(validation.Diagnostics) != 0 {
-		return checkedInputError(errors.New("passive source validation failed; effective templates were not evaluated"))
 	}
 	if err = chezmoi.ValidateRepository(ctx, source, config.Configs.Repository); err != nil {
 		return classifyPolicyError(err)
@@ -86,14 +78,12 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 			return internalError(err)
 		}
 		model, checkErr := chezmoi.CheckPolicy(ctx, source, policy, true)
-		if checkErr != nil {
-			return classifyPolicyError(checkErr)
-		}
+		// Keep findings collected before a later backend/template failure.
 		if err = printFileDiagnostics(out, model); err != nil {
 			return internalError(err)
 		}
-		if err = model.Err(); err != nil {
-			return checkedInputError(err)
+		if err = errors.Join(model.Err(), checkErr); err != nil {
+			return classifyPolicyError(err)
 		}
 		_, err = fmt.Fprint(out, "Files policy: valid\n"+
 			"Publication: existing policy checked; no publication performed\n")
@@ -141,6 +131,10 @@ func printPolicyPath(out io.Writer, policy chezmoi.Policy) error {
 
 func printFileDiagnostics(out io.Writer, model manifest.FileModel) error {
 	for _, diagnostic := range model.Diagnostics {
+		// Errors are owned by the returned error chain; main emits them on stderr.
+		if diagnostic.Severity != manifest.FileWarning {
+			continue
+		}
 		if _, err := fmt.Fprintln(out, diagnostic); err != nil {
 			return err
 		}

@@ -78,8 +78,8 @@ func CompilePolicy(ctx context.Context, source string, input PolicyInput) (Polic
 	if err != nil {
 		return policy, err
 	}
-	if len(validation.Diagnostics) != 0 {
-		return policy, fmt.Errorf("policy source validation failed: %v", validation.Diagnostics)
+	if err = validation.Err(); err != nil {
+		return policy, fmt.Errorf("policy source validation failed: %w", err)
 	}
 	if err = ValidateRepository(ctx, source, input.Repository); err != nil {
 		return policy, fmt.Errorf("policy source does not match configured repository: %w", err)
@@ -375,14 +375,16 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
 				result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-					Severity: manifest.FileError, Message: "published files policy is missing",
+					Severity: manifest.FileError, Path: path,
+					Message: "published files policy is missing; run dotm files refresh",
 				})
 			} else {
 				return result, fmt.Errorf("inspect published files policy: %w", statErr)
 			}
 		} else if !info.Mode().IsRegular() {
 			result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-				Severity: manifest.FileError, Message: "published files policy is not a regular file",
+				Severity: manifest.FileError, Path: path,
+				Message: "published files policy is not a regular file; correct the policy path before refreshing",
 			})
 		} else {
 			persistedBytes, readErr := os.ReadFile(path)
@@ -392,8 +394,8 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 			var persisted Policy
 			if decodeErr := json.Unmarshal(persistedBytes, &persisted); decodeErr != nil {
 				result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-					Severity: manifest.FileError,
-					Message:  fmt.Sprintf("published files policy is malformed: %v", decodeErr),
+					Severity: manifest.FileError, Path: path,
+					Message: fmt.Sprintf("published files policy is malformed: %v; run dotm files refresh", decodeErr),
 				})
 			} else {
 				want, marshalErr := json.Marshal(candidate)
@@ -410,7 +412,8 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 				}
 				if !bytes.Equal(want, persistedJSON) || !bytes.Equal(want, callerJSON) {
 					result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-						Severity: manifest.FileError, Message: "published files policy is stale or mismatched",
+						Severity: manifest.FileError, Path: path,
+						Message: "published files policy is stale or mismatched; run dotm files refresh",
 					})
 				}
 			}
@@ -431,7 +434,7 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 			return result, pathErr
 		}
 		result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-			Severity: manifest.FileError,
+			Severity: manifest.FileError, Path: filepath.Join(candidate.SourceDir, ".chezmoiignore"),
 			Message: fmt.Sprintf("root ignore template does not consume external policy %q; "+
 				"deliberately adopt examples/chezmoi-policy/.chezmoiignore; "+
 				"dotm does not edit user integration files", path),

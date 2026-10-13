@@ -13,7 +13,11 @@
 
 `cfg lint` and `files` commands use 0, 1, or 3. Warnings and inventory findings alone return 0. Combined operations keep maximum severity; configuration failures permit later operations, package/internal failures stop them. No special code is promised for uncatchable termination.
 
-Read original stderr causes and stdout actual-state/stage results. Repair the cause and repeat; use `update cfg` when only configuration stages need retry. Safe files can already have changed beside a preserved conflict. Hooks and destination changes repeat nontransactionally. A configuration failure does not undo committed package work.
+Diagnostics are emitted once: stdout carries warnings, status, and actual stage/target outcomes; error diagnostics are returned to the CLI and printed once on stderr with their original cause. A warning-only lint can succeed; an error does not become a warning merely because it is also represented in a structured result. Lifecycle operations continue according to the existing severity rules.
+
+`cfg lint` reports whole-source and settings findings without inventing declaration context. `files lint` may report genuine declaration problems with their source/application/field/path and related declaration. Integration, source/settings, and policy findings use their real path/context and message; they have no declaration unless one actually produced them. `files refresh` returns its errors to the caller and prints warnings/status only; files lifecycle errors likewise remain in the returned failure while stdout reports warnings and nonfailure target outcomes.
+
+For repair, `files refresh` can regenerate only a missing, malformed, or stale regular policy file. If the reported policy path is not a regular file, remove/rename it only after reviewing it, then refresh. Repair integration by manually adopting the current [example root inclusion](chezmoi.md) into the effective source root (including `.chezmoiroot`), and correct source or chezmoi settings manually. Correct declaration errors in the named TOML input. Do not expect `init` or `doctor --fix` to perform these repairs.
 
 ## Common diagnostics
 
@@ -25,7 +29,7 @@ Read original stderr causes and stdout actual-state/stage results. Repair the ca
 | Missing packages block configuration | Inspect full dependency closure; install missing applications, then retry configuration work |
 | Dirty/diverged/detached source | Preserve work and resolve/publish it deliberately; dotm does not stash/reset/clean/rebase |
 | Source replacement cannot prove publication | Inspect local objects/remote reachability; never delete unpublished work merely to pass a check |
-| Missing/stale/disconnected file policy | Follow [integration](chezmoi.md), bind the reported path, then `files refresh`; lint alone does not publish |
+| Missing/stale/disconnected file policy | Follow [integration](chezmoi.md), manually adopt the example root inclusion and correct source/settings as reported; then `files refresh` for regenerable regular policy. Lint alone does not publish |
 | Native `!` rule overrides generated exclusion | Revise the owning native rule; adding later positive ignores cannot override negation precedence |
 | Local file/type/symlink conflict | Compare source and destination, preserve local changes, deliberately reconcile and retry; no force mode is provided |
 | Another mutation owns the state | Wait for it to finish; stop surviving hooks/native/manual writers before retry, never delete lock files |

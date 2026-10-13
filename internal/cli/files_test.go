@@ -199,3 +199,81 @@ func (s *FilesCLISuite) TestManifestInputAndHostIOHaveDistinctExitCodes() {
 	s.Require().Error(err, output)
 	s.Equal(3, cli.ExitCode(err), "catalog read I/O failures are internal")
 }
+
+func (s *FilesCLISuite) TestGeneralLintFindingsAppearOnceWithoutDeclarationContext() {
+	s.Require().NoError(os.Remove(filepath.Join(s.source, ".chezmoiignore")))
+	output, err := s.run("files", "lint")
+	s.Require().Error(err)
+	s.Equal(1, cli.ExitCode(err))
+	text := output + "dotm: " + err.Error()
+	for _, finding := range []string{"published files policy is missing", "root ignore template does not consume"} {
+		s.Equal(1, strings.Count(text, finding), text)
+	}
+	s.Contains(err.Error(), s.policyPath)
+	s.Contains(err.Error(), filepath.Join(s.source, ".chezmoiignore"))
+	s.NotContains(text, `[""][0]`)
+	s.NotContains(text, ` = "" ()`)
+	s.NotContains(output, "error:")
+}
+
+func (s *FilesCLISuite) TestLocalDeclarationConflictAppearsOnceWithBothOrigins() {
+	s.write(filepath.Join(s.dataDir, "catalog.toml"), "[app]\nconfigs = ['~/.config/app']\n")
+	s.write(filepath.Join(s.dataDir, "configurations.toml"), configurationManifest(s.remote, "['app']"))
+	local := filepath.Join(s.configHome, "dotm", "files.toml")
+	s.write(local, "[unmanaged]\n'~/.config' = ['app']\n")
+	output, err := s.run("files", "lint")
+	s.Require().Error(err)
+	s.Equal(1, cli.ExitCode(err))
+	text := output + "dotm: " + err.Error()
+	s.Equal(1, strings.Count(text, "overlapping declarations"), text)
+	s.Contains(text, filepath.Join(s.dataDir, "catalog.toml"))
+	s.Contains(text, `application "app": configs[0]`)
+	s.Contains(text, local)
+	s.Contains(text, `unmanaged["~/.config"][0]`)
+	s.Contains(text, filepath.Join(s.home, ".config", "app"))
+}
+
+func (s *FilesCLISuite) TestRefreshAndLifecycleDoNotRepeatPolicyErrorsInReports() {
+	s.Require().NoError(os.Remove(filepath.Join(s.source, ".chezmoiignore")))
+	s.write(filepath.Join(s.source, "dot_config", "app"), "configuration\n")
+	s.git("-C", s.source, "add", "--all")
+	s.git("-C", s.source, "-c", "user.name=Files Test", "-c", "user.email=files@example.invalid",
+		"commit", "--quiet", "-m", "manual integration required")
+	s.git("-C", s.source, "push", "--quiet")
+	s.write(filepath.Join(s.dataDir, "catalog.toml"), "[app]\nconfigs = ['~/.config/app']\n")
+	s.write(filepath.Join(s.dataDir, "configurations.toml"), configurationManifest(s.remote, "['app']"))
+	for _, args := range [][]string{{"files", "refresh"}, {"update", "cfg"}} {
+		output, err := s.run(args...)
+		s.Require().Error(err)
+		s.Equal(1, cli.ExitCode(err))
+		text := output + "dotm: " + err.Error()
+		s.Equal(1, strings.Count(text, "root ignore template does not consume"), text)
+		s.NotContains(output, "error:")
+	}
+}
+
+func (s *FilesCLISuite) TestTemplateFailureRetainsEarlierLintFindingAndExitCause() {
+	s.write(filepath.Join(s.source, "dot_broken.tmpl"), `{{ fail (print "lint-template-" "sentinel") }}`)
+	output, err := s.run("files", "lint")
+	s.Require().Error(err)
+	s.Equal(1, cli.ExitCode(err))
+	text := output + "dotm: " + err.Error()
+	s.Equal(1, strings.Count(text, "published files policy is missing"), text)
+	s.Equal(1, strings.Count(text, "lint-template-sentinel"), text)
+	var exit *exec.ExitError
+	s.ErrorAs(err, &exit)
+}
+
+func (s *FilesCLISuite) TestMissingBackendRetainsHostCauseAndSeverity() {
+	gitPath, err := exec.LookPath("git")
+	s.Require().NoError(err)
+	bin := filepath.Join(s.base, "bin")
+	s.Require().NoError(os.Mkdir(bin, 0o700))
+	s.Require().NoError(os.Symlink(gitPath, filepath.Join(bin, "git")))
+	s.T().Setenv("PATH", bin)
+	output, err := s.run("files", "lint")
+	s.Require().Error(err)
+	s.Equal(3, cli.ExitCode(err))
+	s.ErrorIs(err, exec.ErrNotFound)
+	s.Equal(1, strings.Count(output+err.Error(), "executable file not found"))
+}

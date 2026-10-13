@@ -63,5 +63,4 @@ Manifests/selection load once but each cycle inspects current packages and retai
 One mutation per user's XDG state: install/update/update cfg/files refresh/files status/remove-extras/non-dry-run clean fail immediately when busy. Combined operations hold ownership through prompts/hooks; a nested hook mutation fails rather than waiting. Read-only inspection and cleanup dry-run are not atomic snapshots.
 
 Do not delete `/tmp/dotm-<uid>/` lock files. Native update/add/recovery children can retain ownership after dotm dies; hooks do not, so stop surviving hooks before retry. Direct Nix/Git/chezmoi operations and independent state directories sharing a source are not coordinated.
-
-stdout contains inspection/actual results; stderr stage diagnostics and backend/hook output. A nonzero exit may follow successful package/file changes. Use Recovery to interpret it.
+stdout contains warnings, inspection/status, and actual nonfailure stage/target outcomes. Error diagnostics are retained in the returned failure chain and printed once on stderr with the original cause; do not expect the same error to be repeated on stdout. A nonzero exit may follow successful package/file changes. Use Recovery to interpret it.

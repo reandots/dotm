@@ -26,6 +26,16 @@ type ValidationResult struct {
 	Diagnostics []Diagnostic
 }
 
+// Err retains passive findings for the caller's single error-emission boundary.
+func (r ValidationResult) Err() error {
+	var failures []error
+	for _, diagnostic := range r.Diagnostics {
+		failures = append(failures, fmt.Errorf("%s: %s: %s",
+			diagnostic.Path, diagnostic.Code, diagnostic.Message))
+	}
+	return errors.Join(failures...)
+}
+
 func (r *ValidationResult) add(path, code, message string) {
 	r.Diagnostics = append(r.Diagnostics, Diagnostic{Path: path, Code: code, Message: message})
 }

@@ -58,11 +58,15 @@ Never exclude an owned config as unmanaged to bypass a conflict. Warnings permit
 
 ## Policy commands and application
 
-`files lint` checks declaration/native rules, freshness/binding, and actual integration without persistent publication. It is **not** passive: trusted templates run and temporary probes may be created.
+`files lint` checks declaration/native rules, freshness/binding, and actual integration without persistent publication. It is **not** passive: trusted templates run and temporary probes may be created. Warnings go to stdout; error diagnostics are returned and emitted once on stderr with their original cause.
 
 `files refresh` validates a fresh candidate without requiring old-policy freshness, atomically publishes it, then verifies normal integration. Failure before publication preserves old policy; failure after publication does not roll it back. Only `--update-source` adds acquisition/fetch. `files status` refreshes locally without fetch. Neither command applies files/runs application hooks/inspects packages. Pending package recovery blocks refresh/status without invoking Nix; read-only lint does not recover.
 
-`install`, `update`, and `update cfg` run source acquisition and policy refresh after eligible pre-configuration hooks, before scoped apply. Readiness requires all packages of the application/transitive dependencies; package-free apps need no marker. `update cfg` skips missing-package apps. Hooks repeat even when files do not change. An empty target set never becomes unscoped apply.
+Refresh repairs only a missing, malformed, or stale **regular** policy file. If the reported policy path is not a regular file, inspect and deliberately move/remove that object before retrying. It does not repair a missing root inclusion, incompatible source layout, or incorrect chezmoi settings: manually adopt the current example inclusion at the effective source root (respecting `.chezmoiroot`) and correct source/settings. Declaration errors require editing the named manifest or local `files.toml`. There is no `doctor --fix` repair path.
+
+`install`, `update`, and `update cfg` run source acquisition and policy refresh after eligible pre-configuration hooks, before scoped apply. Errors remain in the returned lifecycle failure; stdout contains warnings and nonfailure target outcomes. Policy errors preserve already committed package work.
+
+Readiness requires all packages of the application/transitive dependencies; package-free apps need no marker. `update cfg` skips missing-package apps. Hooks repeat even when files do not change. An empty target set never becomes unscoped apply.
 
 Files apply per selected managed entry with native conflict protection: no forced overwrite/merge or broad cleanup. Local first-adoption/content/permission differences, incompatible types, and symlink ancestors can conflict. Local data is preserved; independent safe files may already change. Conflicts block affected/consumer post-hooks, not all independent work. There is no file/hook rollback.
 

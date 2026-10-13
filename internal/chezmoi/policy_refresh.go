@@ -2,6 +2,7 @@ package chezmoi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dotm/internal/manifest"
@@ -49,10 +50,7 @@ func RefreshPolicy(ctx context.Context, source string, input PolicyInput) (Polic
 	}
 	candidate, err := CheckPolicy(ctx, source, policy, false)
 	result.Diagnostics = append(result.Diagnostics, candidate.Diagnostics...)
-	if err != nil {
-		return result, err
-	}
-	if err = candidate.Err(); err != nil {
+	if err = errors.Join(candidate.Err(), err); err != nil {
 		return result, err
 	}
 	if err = PublishPolicy(ctx, source, policy); err != nil {
@@ -62,9 +60,7 @@ func RefreshPolicy(ctx context.Context, source string, input PolicyInput) (Polic
 	// The post-publication check is authoritative; don't repeat candidate warnings.
 	result.Diagnostics = append(input.Files.Diagnostics[:len(input.Files.Diagnostics):len(input.Files.Diagnostics)],
 		published.Diagnostics...)
-	if err == nil {
-		err = published.Err()
-	}
+	err = errors.Join(published.Err(), err)
 	if err != nil {
 		return result, fmt.Errorf("policy was published, but post-publication verification failed: %w", err)
 	}

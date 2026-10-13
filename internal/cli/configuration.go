@@ -10,6 +10,7 @@ import (
 
 	"dotm/internal/chezmoi"
 	"dotm/internal/installed"
+	"dotm/internal/manifest"
 )
 
 // ExitCode returns the maximum severity, including all errors of combined operations.
@@ -62,18 +63,14 @@ func lintSource(source string, out io.Writer) error {
 	}
 	result, err := chezmoi.ValidateSource(context.Background(), source)
 	if err != nil {
-		return err
+		return errors.Join(result.Err(), err)
 	}
 	fmt.Fprintf(out, "Configuration source: %s\n", result.SourceDir)
 	if len(result.Diagnostics) == 0 {
 		fmt.Fprintln(out, "Configuration policy: valid (templates are not evaluated)")
 		return nil
 	}
-	var failures []error
-	for _, diagnostic := range result.Diagnostics {
-		failures = append(failures, fmt.Errorf("%s: %s: %s", diagnostic.Path, diagnostic.Code, diagnostic.Message))
-	}
-	return &installed.OperationError{Severity: installed.SeverityConfiguration, Err: errors.Join(failures...)}
+	return &installed.OperationError{Severity: installed.SeverityConfiguration, Err: result.Err()}
 }
 
 func confirmReplacement(in io.Reader, out io.Writer) chezmoi.ConfirmReplacement {
@@ -119,8 +116,11 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 		fmt.Fprintf(out, "Retained source backup: %s\n", result.Source.Backup)
 	}
 	fmt.Fprintf(out, "Files policy stage: %s\n", result.PolicyStage.Status)
+	// Errors retain their wrapped return path; only warnings belong in reports.
 	for _, diagnostic := range result.Policy.Diagnostics {
-		fmt.Fprintln(out, diagnostic)
+		if diagnostic.Severity == manifest.FileWarning {
+			fmt.Fprintln(out, diagnostic)
+		}
 	}
 	for _, app := range result.Applications {
 		fmt.Fprintf(out, "  %s: ", app.ID)
@@ -143,15 +143,24 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 	for _, target := range result.Apply.Targets {
 		fmt.Fprintf(out, "  Target %s [%s; owners: %s]",
 			target.Path, target.Status, list(target.Applications))
-		if target.Message != "" && result.SourceStage.Err == nil && len(result.Apply.Diagnostics) == 0 {
+		if target.Message != "" && !failedApplyStatus(target.Status) &&
+			result.SourceStage.Err == nil && result.PolicyStage.Err == nil && len(result.Apply.Diagnostics) == 0 {
 			fmt.Fprintf(out, ": %s", target.Message)
 		}
 		fmt.Fprintln(out)
 	}
 	for _, entry := range result.Apply.Entries {
-		fmt.Fprintf(out, "    Path %s [%s; owners: %s; selected: %s]: %s\n",
-			entry.Path, entry.Status, list(entry.Applications), list(entry.SelectedApplications), entry.Message)
+		fmt.Fprintf(out, "    Path %s [%s; owners: %s; selected: %s]",
+			entry.Path, entry.Status, list(entry.Applications), list(entry.SelectedApplications))
+		if entry.Message != "" && !failedApplyStatus(entry.Status) {
+			fmt.Fprintf(out, ": %s", entry.Message)
+		}
+		fmt.Fprintln(out)
 	}
+}
+
+func failedApplyStatus(status chezmoi.ApplyStatus) bool {
+	return status == chezmoi.ApplyConflict || status == chezmoi.ApplyError || status == chezmoi.ApplyMissing
 }
 
 func severityName(severity installed.Severity) string {

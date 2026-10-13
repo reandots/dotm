@@ -134,12 +134,28 @@ func (s *ManifestSuite) TestLocalFileValidationAndLiteralNames() {
 	s.Equal("/home/files-test/literal/*", model.Declarations[0].Path)
 	s.Equal("/home/files-test/literal/$HOME", model.Declarations[1].Path)
 	s.Require().Len(model.Diagnostics, 3, "duplicate plus both nested overlap pairs warn")
+
 	for _, diagnostic := range model.Diagnostics {
 		s.Equal(FileWarning, diagnostic.Severity)
 	}
 	path, err := FilesPath()
 	s.Require().NoError(err)
 	s.Equal("/home/files-test/.config/dotm/files.toml", path)
+}
+
+func (s *ManifestSuite) TestGeneralDiagnosticOmitsDeclarationProvenance() {
+	for _, path := range []string{"", "/state/dotm/chezmoi-policy.json"} {
+		diagnostic := FileDiagnostic{Severity: FileError, Path: path, Message: "policy binding mismatch"}
+		text := diagnostic.String()
+		s.Contains(text, "error:")
+		s.Contains(text, diagnostic.Message)
+		if path != "" {
+			s.Contains(text, path)
+		}
+		s.NotContains(text, `[""]`)
+		s.NotContains(text, "[0]")
+		s.NotContains(text, "()")
+	}
 }
 
 func (s *ManifestSuite) TestUnmanagedValidationAndExpansion() {

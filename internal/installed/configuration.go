@@ -201,12 +201,7 @@ func configure(
 			if globalErr != nil {
 				globalErr = fmt.Errorf("apply configuration source: %w", globalErr)
 			} else if len(result.Apply.Diagnostics) != 0 {
-				var diagnostics []error
-				for _, diagnostic := range result.Apply.Diagnostics {
-					diagnostics = append(diagnostics, fmt.Errorf("%s: %s: %s",
-						diagnostic.Path, diagnostic.Code, diagnostic.Message))
-				}
-				globalErr = errors.Join(diagnostics...)
+				globalErr = (chezmoi.ValidationResult{Diagnostics: result.Apply.Diagnostics}).Err()
 			}
 		}
 		if globalErr != nil {

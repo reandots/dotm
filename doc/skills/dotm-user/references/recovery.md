@@ -9,9 +9,11 @@
 | 2 | Package or package pre-hook failure |
 | 3 | Arguments/settings/internal/inspection/output/locking/recovery failure |
 
-`cfg lint` and files commands use 0/1/3. Combined flags keep maximum severity; configuration failures permit later cycles, package/internal failures stop them. No specific exit is promised for uncatchable termination. Read stderr's original cause and stdout's actual state/stage outcomes; nonzero does not imply no effects.
+`cfg lint` and files commands use 0/1/3. Combined flags keep maximum severity; configuration failures permit later cycles, package/internal failures stop them. No specific exit is promised for uncatchable termination. Diagnostics are emitted once: stdout carries warnings and actual status/stage/target outcomes; errors stay in the returned failure chain and are printed once on stderr with their original cause. Nonzero does not imply no effects.
 
-Repair the cause, then retry the appropriate command. Use `update cfg` if only configuration work remains, not a fresh package update. Hooks and safe file changes can have already happened and repeat; configuration failures never undo committed package work. Preserve local data and resolve conflicts deliberately; no force mode exists.
+`cfg lint` reports source/settings context without manufacturing declaration provenance. Files declaration findings may include their actual source/application/field/path and related declaration; integration, source/settings, and policy findings use their actual path/context without a fake declaration. `files refresh` errors are returned while stdout carries warnings/status only; lifecycle file errors are returned too, while warnings and nonfailure target outcomes remain on stdout. Existing lifecycle continuation and exit codes are unchanged.
+
+Repair only missing, malformed, or stale regular policy with `files refresh`. If the reported policy path is not a regular file, inspect it before deliberately renaming/removing it. Fix integration by manually adopting the [example root inclusion](../../../en/chezmoi.md) in the effective source root (including `.chezmoiroot`); correct source/settings and declaration TOML manually. No `doctor --fix` exists.
 
 ## Diagnostic decisions
 
@@ -23,7 +25,7 @@ Repair the cause, then retry the appropriate command. Use `update cfg` if only c
 | Missing packages skip configs | Inspect full dependency closure, use authorized `install`, retry configurations |
 | Dirty/diverged/detached source | Preserve, reconcile, and publish work explicitly; no automatic stash/reset/clean/rebase |
 | Source replacement lacks publication proof | Inspect local objects and remote reachability; do not delete unpublished work to pass |
-| Missing/stale/disconnected policy | Follow Files binding/inclusion, then refresh and lint; lint alone never publishes |
+| Missing/stale/disconnected policy | Follow Files binding/inclusion: manually adopt the example root inclusion and correct reported source/settings; refresh regenerable regular policy, then lint |
 | Native `!` rule intersects exclusions | Revise the owning native rule, not later positive ignores |
 | Local content/type/permission/symlink conflict | Compare source/destination, preserve changes, deliberately reconcile and retry |
 | Busy mutation ownership | Let operation finish; stop surviving writers/hooks before retry; do not delete locks |

@@ -39,16 +39,24 @@ const (
 	FileError   FileSeverity = "error"
 )
 
-// Related is nil for invalid input and points to the other side for overlap diagnostics.
+// Path supplies context for general findings without declaration provenance.
+// Related points to the other declaration for overlap diagnostics.
 type FileDiagnostic struct {
 	Severity    FileSeverity
 	Message     string
+	Path        string
 	Declaration FileDeclaration
 	Related     *FileDeclaration
 }
 
 func (d FileDiagnostic) String() string {
-	text := fmt.Sprintf("%s: %s: %s", d.Severity, d.Declaration, d.Message)
+	text := string(d.Severity) + ": "
+	if d.Declaration.Source != "" {
+		text += d.Declaration.String() + ": "
+	} else if d.Path != "" {
+		text += d.Path + ": "
+	}
+	text += d.Message
 	if d.Related != nil {
 		text += "; overlaps " + d.Related.String()
 	}
