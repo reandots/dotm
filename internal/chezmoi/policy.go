@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"dotm/internal/manifest"
-	"dotm/internal/pathutil"
 )
 
 // PolicyInput identifies the selected dotm configuration independently of package readiness.
@@ -49,19 +48,20 @@ type Policy struct {
 	Source        string            `json:"source"`
 }
 
-// PolicyPath does not create state. Different effective source/config/destination bindings
-// have separate files; profile switches atomically replace the same binding's selection.
-func PolicyPath(policy Policy) (string, error) {
-	binding, err := json.Marshal([]string{policy.ConfigFile, policy.SourceDir, policy.DestDir})
-	if err != nil {
-		return "", err
+// PolicyPath returns the one fixed policy location for the effective state directory.
+// An explicitly configured relative XDG_STATE_HOME is unsupported, never rebased.
+func PolicyPath(_ Policy) (string, error) {
+	state := os.Getenv("XDG_STATE_HOME")
+	if state == "" {
+		state = os.Getenv("HOME")
+		if state == "" || !filepath.IsAbs(state) {
+			return "", fmt.Errorf("HOME must be an absolute path when XDG_STATE_HOME is unset")
+		}
+		state = filepath.Join(state, ".local", "state")
+	} else if !filepath.IsAbs(state) {
+		return "", fmt.Errorf("XDG_STATE_HOME must be an absolute path")
 	}
-	key := sha256.Sum256(binding)
-	state, err := pathutil.Target("$XDG_STATE_HOME/dotm/files/chezmoi")
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(state, hex.EncodeToString(key[:])+".json"), nil
+	return filepath.Join(filepath.Clean(state), "dotm", "chezmoi-policy.json"), nil
 }
 
 // CompilePolicy validates passive safety before evaluating trusted chezmoi templates.
@@ -298,17 +298,6 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 	if err != nil {
 		return err
 	}
-	command := applyCommand{source: source}
-	configured, err := policyCommand(ctx, command, "execute-template",
-		`{{ $d := default dict (get . "dotm") }}`+
-			`{{ if default false (get $d "nativeOnly") }}{{ fail "normal dotm.nativeOnly must be false" }}{{ end }}`+
-			`{{ default "" (get $d "policyFile") }}`)
-	if err != nil {
-		return err
-	}
-	if string(configured) != path {
-		return fmt.Errorf("chezmoi data.dotm.policyFile must be %q (found %q)", path, configured)
-	}
 	if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -331,11 +320,12 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 		return closeErr
 	}
 	override, err := json.Marshal(map[string]any{"dotm": map[string]any{
-		"policyFile": candidatePath, "nativeOnly": false,
+		"policyCandidate": candidatePath, "nativeOnly": false,
 	}})
 	if err != nil {
 		return err
 	}
+	command := applyCommand{source: source}
 	rendered, err := policyCommand(ctx, command, "--override-data", string(override),
 		"execute-template", "--file", filepath.Join(policy.SourceDir, ".chezmoiignore"))
 	if err != nil {
@@ -348,7 +338,7 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("root .chezmoiignore does not consume the bound external policy")
+		return fmt.Errorf("root .chezmoiignore does not consume the fixed-path external policy")
 	}
 	if err = os.WriteFile(candidatePath, want, 0o600); err != nil {
 		return err
@@ -442,9 +432,9 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 		}
 		result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
 			Severity: manifest.FileError,
-			Message: fmt.Sprintf("root ignore template does not consume the bound external policy; "+
-				"deliberately adopt examples/chezmoi-policy/.chezmoiignore and configure "+
-				"chezmoi [data.dotm] policyFile = %q; dotm does not edit user integration files", path),
+			Message: fmt.Sprintf("root ignore template does not consume external policy %q; "+
+				"deliberately adopt examples/chezmoi-policy/.chezmoiignore; "+
+				"dotm does not edit user integration files", path),
 		})
 		return result, nil
 	}
@@ -557,23 +547,7 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 		}
 	}
 	if published {
-		configured, runErr := policyCommand(ctx, command, "execute-template",
-			`{{ $d := default dict (get . "dotm") }}`+
-				`{{ if default false (get $d "nativeOnly") }}nativeOnly{{ else }}`+
-				`{{ default "" (get $d "policyFile") }}{{ end }}`)
-		if runErr != nil {
-			return result, fmt.Errorf("inspect published files policy integration: %w", runErr)
-		}
-		path, pathErr := PolicyPath(candidate)
-		if pathErr != nil {
-			return result, pathErr
-		}
-		if string(configured) != path {
-			result.Diagnostics = append(result.Diagnostics, manifest.FileDiagnostic{
-				Severity: manifest.FileError, Message: "published policy is not bound by normal chezmoi configuration",
-			})
-		}
-		if _, runErr = policyCommand(ctx, command, "dump", "--format=json"); runErr != nil {
+		if _, runErr := policyCommand(ctx, command, "dump", "--format=json"); runErr != nil {
 			return result, fmt.Errorf("inspect published files policy integration: %w", runErr)
 		}
 	}
@@ -613,7 +587,7 @@ func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy P
 	for _, contextName := range contexts {
 		override, marshalErr := json.Marshal(map[string]any{
 			"chezmoi": map[string]any{"command": contextName},
-			"dotm":    map[string]any{"policyFile": path, "nativeOnly": false},
+			"dotm":    map[string]any{"policyCandidate": path, "nativeOnly": false},
 		})
 		if marshalErr != nil {
 			return false, nil, marshalErr
@@ -635,7 +609,7 @@ func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy P
 		}
 	}
 	override, err := json.Marshal(map[string]any{
-		"dotm": map[string]any{"policyFile": path, "nativeOnly": false},
+		"dotm": map[string]any{"policyCandidate": path, "nativeOnly": false},
 	})
 	if err != nil {
 		return false, nil, err

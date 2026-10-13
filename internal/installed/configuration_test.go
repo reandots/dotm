@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dotm/internal/chezmoi"
 	"dotm/internal/manifest"
 
 	"github.com/stretchr/testify/suite"
@@ -102,11 +101,9 @@ func (s *ConfigurationLifecycleSuite) repository(dir string, files map[string]st
 	files[".chezmoiignore"] = string(template)
 	configFile := filepath.Join(dir, "config", "chezmoi", "chezmoi.toml")
 	source := filepath.Join(dir, "data", "chezmoi")
-	policyPath, err := chezmoi.PolicyPath(chezmoi.Policy{ConfigFile: configFile, SourceDir: source, DestDir: dir})
-	s.Require().NoError(err)
 	s.Require().NoError(os.MkdirAll(filepath.Dir(configFile), 0o700))
 	s.Require().NoError(os.WriteFile(configFile, []byte(fmt.Sprintf(
-		"sourceDir = %q\ndestDir = %q\n[data.dotm]\npolicyFile = %q\n", source, dir, policyPath)), 0o600))
+		"sourceDir = %q\ndestDir = %q\n", source, dir)), 0o600))
 	for name, content := range files {
 		path := filepath.Join(work, name)
 		s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))

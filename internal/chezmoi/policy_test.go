@@ -47,7 +47,7 @@ func (s *policySuite) SetupTest() {
 	} {
 		s.T().Setenv(name, value)
 	}
-	s.configure("")
+	s.configure()
 	s.git("init", "--quiet", s.checkout)
 	bare := filepath.Join(s.root, "remote.git")
 	s.git("init", "--bare", "--quiet", bare)
@@ -84,12 +84,9 @@ func (s *policySuite) input(config string, declarations ...manifest.FileDeclarat
 	}
 }
 
-func (s *policySuite) configure(policyPath string) {
+func (s *policySuite) configure() {
 	s.T().Helper()
 	content := "sourceDir = " + strconv.Quote(s.checkout) + "\ndestDir = " + strconv.Quote(s.home) + "\n"
-	if policyPath != "" {
-		content += "[data.dotm]\npolicyFile = " + strconv.Quote(policyPath) + "\n"
-	}
 	s.write(s.config, content)
 }
 
@@ -97,7 +94,7 @@ func (s *policySuite) integrate() string {
 	s.T().Helper()
 	path, err := PolicyPath(Policy{ConfigFile: s.config, SourceDir: s.source, DestDir: s.home})
 	s.Require().NoError(err)
-	s.configure(path)
+	s.configure()
 	fixture, err := os.ReadFile(filepath.Join("..", "..", "examples", "chezmoi-policy", ".chezmoiignore"))
 	s.Require().NoError(err)
 	s.write(filepath.Join(s.source, ".chezmoiignore"), string(fixture))
@@ -182,7 +179,7 @@ func (s *policySuite) TestSourceRebindingUsesEffectiveRoot() {
 	s.write(filepath.Join(s.checkout, ".chezmoiroot"), "effective\n")
 	s.source = filepath.Join(s.checkout, "effective")
 	secondPath := s.integrate()
-	s.NotEqual(firstPath, secondPath)
+	s.Equal(firstPath, secondPath)
 	s.write(filepath.Join(s.source, "hidden"), "hidden")
 	s.commit()
 	second := s.publish(s.input("work", manifest.FileDeclaration{
@@ -372,4 +369,32 @@ func (s *policySuite) TestPolicyAcceptsFileURLAliasAndRejectsReplacedOrigin() {
 	s.git("init", "--bare", "--quiet", replacement)
 	s.git("-C", s.checkout, "remote", "set-url", "origin", replacement)
 	s.Contains(s.managed(), "hidden", "a policy bound to the previous origin must not filter")
+}
+
+func (s *policySuite) TestPolicyPathUsesFixedXDGOrHomeLocation() {
+	state := filepath.Join(s.root, "custom-state", "nested")
+	s.T().Setenv("XDG_STATE_HOME", state)
+	path, err := PolicyPath(Policy{})
+	s.Require().NoError(err)
+	s.Equal(filepath.Join(state, "dotm", "chezmoi-policy.json"), path)
+
+	s.T().Setenv("XDG_STATE_HOME", "")
+	path, err = PolicyPath(Policy{})
+	s.Require().NoError(err)
+	s.Equal(filepath.Join(s.home, ".local", "state", "dotm", "chezmoi-policy.json"), path)
+
+	s.T().Setenv("XDG_STATE_HOME", "relative-state")
+	_, err = PolicyPath(Policy{})
+	s.ErrorContains(err, "XDG_STATE_HOME must be an absolute path")
+	s.T().Setenv("XDG_STATE_HOME", "")
+	s.T().Setenv("HOME", "relative-home")
+	_, err = PolicyPath(Policy{})
+	s.ErrorContains(err, "HOME must be an absolute path")
+}
+
+func (s *policySuite) TestMalformedFixedPolicyIsNotTreatedAsMissing() {
+	path := s.integrate()
+	s.write(path, "{")
+	_, err := policyCommand(context.Background(), applyCommand{source: s.checkout}, "managed", "--nul-path-separator")
+	s.Error(err)
 }

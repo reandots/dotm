@@ -55,7 +55,7 @@ func (s *policySuite) TestInventorySeparatesAcknowledgementsFromProfileFiltering
 	} {
 		s.T().Setenv(key, value)
 	}
-	s.configure("")
+	s.configure()
 	s.integrate()
 	s.write(filepath.Join(s.source, ".chezmoiignore"),
 		mustReadInventoryFixture(s)+"\nroot-native\nboundary/ignored\n")

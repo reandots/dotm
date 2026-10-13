@@ -69,8 +69,7 @@ func (s *FilesCLISuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.policyPath = path
-	s.write(chezmoiConfig, "sourceDir = "+strconvQuote(s.source)+"\ndestDir = "+strconvQuote(s.home)+
-		"\n[data.dotm]\npolicyFile = "+strconvQuote(path)+"\n")
+	s.write(chezmoiConfig, "sourceDir = "+strconvQuote(s.source)+"\ndestDir = "+strconvQuote(s.home)+"\n")
 	s.write(filepath.Join(s.dataDir, "catalog.toml"), "")
 	s.write(filepath.Join(s.dataDir, "configurations.toml"), configurationManifest(s.remote, "[]"))
 	s.write(filepath.Join(s.configHome, "dotm", "config.toml"), "configuration = \"work\"\n")

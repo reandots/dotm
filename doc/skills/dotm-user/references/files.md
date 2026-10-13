@@ -10,39 +10,42 @@ Only normal `mode = "file"` is supported. Targets must map inside effective `des
 
 Rejected compatibility features: run/modify/remove/exact actions, automatic externals, configured hooks, Git autoAdd/autoCommit/autoPush, conflicting sourceDir, symlink mode, dynamic configuration templates, and source directory symlinks. Ordinary trusted file templates/partials and destination `symlink_` entries are distinct and can be supported. Static settings/data syntax is checked. Passing lint proves neither template behavior nor application success. Effective checks/application evaluate trusted templates whose helpers may execute commands; Git helpers/configuration/transports/credentials are also trusted.
 
-## Initial external-policy integration
+## External-policy integration
 
 Required before configuration application. Make changes in the actual dotfiles/provisioning inputs, not an undocumented ephemeral setup.
 
-1. Preserve existing native ignore rules. Add the following inclusion to `.chezmoiignore` in the **effective source root** (respect `.chezmoiroot`), retaining other root/nested rules:
+1. Manually adopt the following inclusion in `.chezmoiignore` in the **effective source root** (respect `.chezmoiroot`), preserving existing root/nested native rules. Replace the template in your own checkout when dotm's documented integration changes; dotm does not edit the checkout automatically.
 
    ```text
    {{- $d := default dict (get . "dotm") -}}
-   {{- $f := default "" (get $d "policyFile") -}}
-   {{- if and (not (default false (get $d "nativeOnly"))) $f (stat $f) -}}
+   {{- if not (default false (get $d "nativeOnly")) -}}
+   {{- $state := env "XDG_STATE_HOME" -}}
+   {{- if eq $state "" -}}
+   {{- $home := env "HOME" -}}
+   {{- if or (eq $home "") (not (isAbs $home)) -}}{{ fail "HOME must be an absolute path when XDG_STATE_HOME is unset" }}{{- end -}}
+   {{- $state = printf "%s/.local/state" $home -}}
+   {{- else if not (isAbs $state) -}}{{ fail "XDG_STATE_HOME must be an absolute path" }}{{- end -}}
+   {{- $f := default "" (get $d "policyCandidate") -}}
+   {{- if eq $f "" -}}{{- $f = printf "%s/dotm/chezmoi-policy.json" (trimSuffix "/" $state) -}}{{- end -}}
+   {{- if stat $f -}}
    {{- $p := include $f | fromJson -}}
    {{- if and (eq (int $p.schemaVersion) 1) (eq $p.repository (trimSuffix "\n" (output "git" "-C" .chezmoi.sourceDir "remote" "get-url" "origin"))) (eq $p.sourceDir .chezmoi.sourceDir) (eq $p.destDir .chezmoi.destDir) (eq $p.configFile .chezmoi.configFile) -}}
    {{ range $p.patterns }}{{ . }}
    {{ end -}}
    {{- end -}}
    {{- end }}
+   {{- end }}
    ```
 
-2. Ensure normal static chezmoi settings select the shared source, correct destination, and `mode = "file"`; preserve unrelated data/settings.
-3. Run `dotm files lint` and obtain its calculated **Policy path**. Initial missing policy/integration errors are expected, not successful validation.
-4. In the normal chezmoi settings (typically `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml`), bind that exact absolute path:
+   The `nativeOnly` and `policyCandidate` lookups are internal overrides used by dotm inspection/verification; do not configure them as user settings. Normal discovery reads only the fixed path. Missing policy preserves native behavior. `stat` guards absence only: malformed JSON is an error, not an empty policy. An empty `patterns` list is valid. The template checks schema, origin, source, destination, and config path before emitting literal patterns; a mismatch emits no exclusions from that policy.
+2. Ensure normal static chezmoi settings select the shared source, correct destination, and `mode = "file"`; preserve unrelated data/settings. No `data.dotm.policyFile` key is required. Policy discovery uses `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/chezmoi-policy.json`.
+3. Run `dotm files refresh` to publish and validate, then `dotm files lint` to verify normal integration. Use `dotm files refresh --update-source` only when source acquisition is needed and approved.
 
-   ```toml
-   [data.dotm]
-   policyFile = "/absolute/path/reported/by/files-lint.json"
-   ```
+The fixed state path is outside Git. If `XDG_STATE_HOME` is unset or empty, `HOME` must be absolute and the fallback is `$HOME/.local/state`; if set, `XDG_STATE_HOME` must be absolute. Never hand-author or copy policy between machines. A binding mismatch cannot apply another binding's exclusions; dotm reports integration/freshness problems during its checks.
 
-   Do not copy this placeholder or another machine's hash. Effective configuration/source-root/destination path changes require the newly calculated binding.
-5. Commit/publish source changes and leave the source clean before source synchronization. `dotm files refresh` checks/publishes locally; `dotm files lint` verifies normal integration. If source acquisition is still needed, use `dotm files refresh --update-source` after preparing source/settings/integration; this introduces network/source-replacement checks. Then inspect `dotm files status`.
+If `data.dotm.policyFile` was configured previously, it is unused now and can be removed manually; dotm does not edit user configuration. Old generated policy files are retained, not discovered as a fallback. Do not delete old/user-owned files without review.
 
-Generated policy is JSON under `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/files/chezmoi/<key>.json`, outside Git. Never hand-edit it. It binds origin URL, effective source/destination/configuration paths, and schema; no separate repository ID exists.
-
-Without published policy, standalone chezmoi retains native behavior. With it, standalone chezmoi follows the **last published** selection, not a new local selection automatically. Refresh after changes to selection/declarations/source/settings. Exclusions are literal roots/subtrees including future descendants, not a universal sandbox/allowlist against adding unrelated files. Ordinary chezmoi add/edit on excluded paths may ignore/reject input.
+With valid policy, standalone chezmoi follows the **last published** selection, not a new local selection automatically. Refresh after changes to selection/declarations/source/settings. Exclusions are literal roots/subtrees including future descendants, not a universal sandbox/allowlist against adding unrelated files. Ordinary chezmoi add/edit on excluded paths may ignore/reject input.
 
 ## Which exclusions mean what
 

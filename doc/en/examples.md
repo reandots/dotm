@@ -54,7 +54,7 @@ It is **not runnable**: `.invalid` repository URLs are fictional; hook implement
 
 ## File-policy integration example
 
-[examples/chezmoi-policy](../../examples/chezmoi-policy/) supplies the root inclusion, illustrative static config, and nested native-ignore fixture. Adopt the template in your owning dotfiles repository while retaining native rules; do not overwrite live configuration with unresolved placeholders. Follow the [integration recipe](chezmoi.md), including the calculated policy-file binding.
+[examples/chezmoi-policy](../../examples/chezmoi-policy/) supplies the root inclusion and nested native-ignore fixture. Manually adopt the current root template in your owning dotfiles repository while retaining native rules; do not overwrite live configuration with unresolved placeholders. Follow the [integration guidance](chezmoi.md). Policy discovery is fixed at `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/chezmoi-policy.json`; no `policyFile` setting or hashed path setup is needed.
 
 ## Reproducing backend acceptance
 

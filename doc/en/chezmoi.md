@@ -8,26 +8,19 @@ The selected configuration's `[configurations.configs]` names `backend = "chezmo
 
 Only normal `mode = "file"` is supported. Declared paths must map inside effective `destDir`. Expanding `$XDG_CONFIG_HOME` in a declaration does **not** relocate source `dot_config`: it still maps according to chezmoi's layout. Do not solve this by broadening the destination to `/`; provide a compatible source layout/settings.
 
-## Adopt external policy deliberately
+## Adopt the external policy
 
 This integration is required before dotm applies configuration targets. It must be owned by your dotfiles/provisioning automation, not an unrecorded manual prerequisite.
 
-1. In your actual dotfiles repository, adopt the inclusion from [examples/chezmoi-policy/.chezmoiignore](../../examples/chezmoi-policy/.chezmoiignore) into the effective source root's `.chezmoiignore`. If using `.chezmoiroot`, place it in that effective root. Preserve existing root and nested native ignore rules; do not replace them with a generated allowlist.
-2. Ensure normal static chezmoi settings select the shared source, correct destination, and `mode = "file"`. Preserve unrelated settings/data.
-3. Run `./dotm files lint` to obtain the calculated **Policy path**. First-use errors about missing policy/integration are expected; do not treat this as successful validation.
-4. In the normal chezmoi configuration (typically `${XDG_CONFIG_HOME:-$HOME/.config}/chezmoi/chezmoi.toml`), bind the reported absolute path:
+1. In your actual dotfiles repository, manually adopt the current root inclusion from [examples/chezmoi-policy/.chezmoiignore](../../examples/chezmoi-policy/.chezmoiignore) into the effective source root's `.chezmoiignore`. If using `.chezmoiroot`, place it in that effective root. Preserve existing root and nested native ignore rules; do not replace them with a generated allowlist. This is a deliberate one-time template update; dotm does not edit your checkout automatically.
+2. Ensure normal static chezmoi settings select the shared source, correct destination, and `mode = "file"`. Preserve unrelated settings/data. No `data.dotm.policyFile` setting is required: the policy is discovered at `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/chezmoi-policy.json`.
+3. Run `./dotm files refresh` to publish and validate the policy, then `./dotm files lint` to verify normal integration. If the source is not yet acquired, use `./dotm files refresh --update-source` after configuring the source/settings and adopting the template.
 
-   ```toml
-   [data.dotm]
-   policyFile = "/absolute/path/reported/by/files-lint.json"
-   ```
+The fixed state path follows the effective `XDG_STATE_HOME`, or `$HOME/.local/state` when it is unset or empty. A nonempty `XDG_STATE_HOME` must be absolute; with it unset/empty, `HOME` must be absolute. The policy file is outside Git. Never hand-author or copy it between machines. It is bound to the repository origin, effective source/destination/configuration paths, and schema, so a mismatch never applies another binding's exclusions. Missing policy preserves standalone native chezmoi behavior; a present malformed policy is an error, not an empty policy. An empty exclusion set is valid.
 
-   Replace the example path. The filename depends on effective configuration-file, source-root, and destination paths; do not copy another machine's hash. A changed binding requires its new path.
-5. Commit/publish source changes and leave the checkout clean before source synchronization. Run `./dotm files refresh` to check and publish locally, then `./dotm files lint` to verify normal integration. If the source is not yet acquired, use `./dotm files refresh --update-source` after configuring the source/settings and integration.
+If you previously configured `data.dotm.policyFile`, that key is now unused and may be removed at your convenience; dotm does not edit your chezmoi configuration. Existing old generated policy files are left untouched and are not discovered as a fallback. Do not delete user-owned or old files as part of adoption without your own review.
 
-Generated JSON lives outside Git at `${XDG_STATE_HOME:-$HOME/.local/state}/dotm/files/chezmoi/<key>.json`. Never hand-author it. The template binds policy to Git origin URL, effective source/destination/configuration paths, and schema. It reads literal JSON strings, not generated template code. No separate repository ID is required.
-
-With no published policy, standalone chezmoi retains native behavior. With policy, standalone chezmoi uses the **last published selection**, not the current dotm selection automatically. Changes to selection/declarations/source/settings can make policy stale: refresh it. Ordinary add/edit on excluded paths may fail or ignore input; exclusions are not a universal sandbox or an allowlist preventing addition of unrelated files.
+With a valid policy, standalone chezmoi uses the **last published selection**, not the current dotm selection automatically. Changes to selection/declarations/source/settings can make policy stale: refresh it. Ordinary add/edit on excluded paths may fail or ignore input; exclusions are not a universal sandbox or an allowlist preventing addition of unrelated files.
 
 ## Acquisition and source switches
 
