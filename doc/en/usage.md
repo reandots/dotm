@@ -19,7 +19,7 @@ Examples use the default data directory. Add `--data-dir /path/to/data` for anot
 | `files lint` | Check declarations, effective native rules, and published policy integration |
 | `files refresh [--update-source]` | Build/check/publish policy; only the explicit flag acquires/updates source |
 | `files status` | Refresh policy locally and inventory managed changes/unclassified files; never fetch |
-| `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired descriptors |
+| `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired and recorded infrastructure descriptors |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | Separate history pruning and optional shared-store GC; no manifests/selection required |
 
 The files commands evaluate trusted templates but do not apply configurations, run application hooks, or inspect Nix. See [chezmoi and files](chezmoi.md).
@@ -33,7 +33,7 @@ The files commands evaluate trusted templates but do not apply configurations, r
 ./dotm status
 ```
 
-Status distinguishes installed, partial, missing, and package-free applications, explicit native entries, and extras. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
+Status distinguishes installed, partial, missing, and package-free applications, explicit native entries, retained infrastructure, and removable extras. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
 
 With healthy source state, installation adds only missing descriptors, including missing pieces of multi-package applications, and preserves installed entries, extras, and the source lock. Repeating a satisfied install still runs configured hooks/configuration phases. Ambiguous desired native entries fail rather than being automatically repaired.
 
@@ -62,6 +62,8 @@ Edit `configuration` in machine-local `config.toml`, review `show`/`status`, the
 Each extra catalog application is confirmed separately. Desired/shared components remain protected; a component shared by extras is removed only if every application using it is approved. Unknown/external entries and inactive entries of desired descriptors are reviewed individually. Accept with `y`/`yes`, reject with Enter or `n`/`no`, cancel with `q`/`quit`. EOF/input errors cancel the entire collected plan; redirected input needs complete lines for every prompt. Entries are rechecked before one native removal batch.
 
 Removal does not change the lock, prune generations, delete store objects, or undo user-data effects. A native failure can leave partial changes; actual state is reported without automatic rollback/retry.
+
+Recorded infrastructure chezmoi is not an extra and cannot be removed by this command, even with `--yes` or after dropping an application sharing its descriptor. Only canonical source/descriptor evidence tied to the machine-local role is protected; an unrelated package exposing a `chezmoi` binary remains removable. An infrastructure-only backend is not an application-update target; sharing with an explicitly selected application permits normal update semantics.
 
 ## History and disk space
 

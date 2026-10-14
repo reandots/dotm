@@ -211,25 +211,25 @@ func freshSource(
 		break
 	}
 	if err := prepareSource(ctx, path, system, packages, true, stderr); err != nil {
-		return "", err
+		return path, err
 	}
 	state, err := inspectSource(path)
 	if err != nil {
-		return "", err
+		return path, err
 	}
 	if !state.Healthy {
-		return "", fmt.Errorf("new source is unusable: %s", state.Reason)
+		return path, fmt.Errorf("new source is unusable: %s", state.Reason)
 	}
 	// Publish before adding packages: an interrupted/failed add can be inspected
 	// and retried against the same instance without adopting the old entries.
 	if err := syncSource(path); err != nil {
-		return "", err
+		return path, err
 	}
 	if err := syncDirectory(instances); err != nil {
-		return "", err
+		return path, err
 	}
 	if err := durableReplace(filepath.Join(root, sourcePointerName), []byte(id+"\n"), 0o600); err != nil {
-		return "", fmt.Errorf("publish current source: %w", err)
+		return path, fmt.Errorf("publish current source: %w", err)
 	}
 	return path, nil
 }

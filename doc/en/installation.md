@@ -13,7 +13,7 @@ go build .
 
 This creates `./dotm`; it does not install it into PATH. Examples in this guide assume commands run from the checkout. You can place the binary on your user PATH using your provisioning/configuration tooling.
 
-The module declares Go 1.23.0. Build and CLI checks were exercised with Go 1.27.4 on Linux/amd64; older toolchains have not been tested. Downloads require network access and writable Go caches. For pinned tooling and `just setup`, see [development](development.md). There is no documented automatic installer or backend bootstrap.
+The module declares Go 1.23.0. Build and CLI checks were exercised with Go 1.27.4 on Linux/amd64; older toolchains have not been tested. Downloads require network access and writable Go caches. For pinned tooling and `just setup`, see [development](development.md). No public automatic installer or setup/bootstrap command is available.
 
 ## Prepare the host separately
 
@@ -37,7 +37,9 @@ Host/session automation must expose:
 
 Start a new session after changing session setup. dotm does not alter the invoking shell, change the login shell, enable services, or configure a graphical session. Hooks prepend the profile's `bin` only to their own PATH. The exercised Arch provisioning details are in [Nix host preparation](../../.agent/nix-host.md).
 
-For configuration deployment, additionally provide **Git and chezmoi** in advance and complete [chezmoi integration](chezmoi.md). Automatic backend installation is not implemented.
+For configuration deployment, additionally provide **Git and chezmoi** in advance and complete [chezmoi integration](chezmoi.md). Ordinary commands do not bootstrap a missing backend. An internal component for future setup can reuse compatible chezmoi or acquire the canonical nixpkgs `chezmoi` descriptor through the same generated source/lock and standard XDG profile, without installing selected applications. It checks actual required operations and formats, not an invented minimum version; an existing unusable candidate must be repaired rather than silently shadowed. This is not a public `init` command or a dotm self-installer.
+
+A backend acquired by that component is recorded separately in machine-local `dotm/infrastructure.json` under XDG state and shown as infrastructure in `status`. It stays protected from `remove-extras`, including `--yes`, even after a catalog application sharing its descriptor is dropped. Ordinary installs/repeated bootstrap keep the lock; ordinary updates advance that backend only when its descriptor belongs to the selected application update scope. External executables are not claimed. Session PATH/share provisioning remains separate.
 
 ## Arrange inputs
 

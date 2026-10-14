@@ -53,6 +53,16 @@ type targetEntry struct {
 	Type string `json:"type"`
 }
 
+type (
+	commandEnvironmentKey struct{}
+	executableContextKey  struct{}
+)
+
+// WithExecutable routes chezmoi commands in ctx to an explicit executable.
+func WithExecutable(ctx context.Context, executable string) context.Context {
+	return context.WithValue(ctx, executableContextKey{}, executable)
+}
+
 type applyCommand struct {
 	source string
 }
@@ -62,9 +72,16 @@ func (c applyCommand) run(ctx context.Context, args ...string) ([]byte, string, 
 		"--source", c.source, "--no-tty", "--no-pager", "--color=false", "--progress=false",
 		"--force=false", "--interactive=false", "--dry-run=false", "--refresh-externals=never",
 	}
-	// The executable and options are fixed; source and destination paths are separate arguments.
-	//nolint:gosec // G204: no shell; destination arguments follow --.
-	cmd := exec.CommandContext(ctx, "chezmoi", append(flags, args...)...)
+	// No shell; source and destination paths are separate arguments.
+	executable := "chezmoi"
+	if override, ok := ctx.Value(executableContextKey{}).(string); ok && override != "" {
+		executable = override
+	}
+	// #nosec G204 -- Explicit backend executable; no shell or user-supplied command arguments.
+	cmd := exec.CommandContext(ctx, executable, append(flags, args...)...)
+	if environment, ok := ctx.Value(commandEnvironmentKey{}).([]string); ok {
+		cmd.Env = environment
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()

@@ -51,6 +51,8 @@ Generated flakes/locks normally live in `${XDG_STATE_HOME:-$HOME/.local/state}/d
 
 With missing/corrupt source, lock, or current pointer, existing profile entries become **external**, not proof that desired packages are installed. `update` has no managed package candidates but can still run eligible package-free configuration work. `install` creates a unique source locked to current `nixos-unstable` and installs the whole desired package set while preserving old entries/source paths. File collisions fail explicitly: review and remove conflicting external entries through `remove-extras` before retrying. Valid manifests/selection/native profile and successful pending recovery remain required; corruption does not bypass those gates.
 
+Recorded infrastructure is an exception: its canonical descriptor/source evidence remains retained independently of the current source, without making other old entries managed. Preserve `dotm/infrastructure.json` under XDG state. Its pending flag records acquisition intent before native add; repeated internal setup can reconcile a completed add without advancing packages. Successful bootstrap is not rolled back by a later setup failure. This is currently an internal component, not a public setup command, and it refuses pending package recovery: complete the existing package-operation recovery path first. Do not remove the role record or guess ownership from binary names.
+
 ## Retained-generation rollback
 
 Run only with dotm/native mutations stopped:

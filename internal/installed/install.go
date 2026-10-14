@@ -131,6 +131,14 @@ func installationPlan(
 		}
 		packages[p.Key()] = p
 	}
+	for _, e := range before.Infrastructure {
+		if p, ok := descriptor(e.Descriptor); ok {
+			packages[p.Key()] = p
+		}
+	}
+	if p, ok := descriptor(before.retainedDescriptor); ok {
+		packages[p.Key()] = p
+	}
 	for _, p := range desired.Packages {
 		packages[p.Key()] = p
 		if !active[p.Key()] {

@@ -360,6 +360,17 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 			entry.Name, state, descriptor, entry.AttrPath, entry.OriginalURL, entry.URL,
 			outputs, list(entry.StorePaths), update)
 	}
+	fmt.Fprintln(out, "Infrastructure:")
+	if len(report.Infrastructure) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	}
+	for _, entry := range report.Infrastructure {
+		state := "inactive"
+		if entry.Active {
+			state = "active"
+		}
+		fmt.Fprintf(out, "  %s [%s; %s]\n", entry.Name, state, entry.Descriptor)
+	}
 	fmt.Fprintln(out, "Extras:")
 	if len(report.Extras) == 0 {
 		fmt.Fprintln(out, "  (none)")

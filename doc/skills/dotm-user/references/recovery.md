@@ -47,6 +47,8 @@ Generated flakes/locks normally live at `${XDG_STATE_HOME:-$HOME/.local/state}/d
 
 Missing/corrupt source/lock/pointer makes existing entries external, not evidence of installed desired packages. Update has no managed package candidates, though eligible package-free configurations can run. Install creates a unique source at current nixos-unstable and installs the desired set, retaining old entries/source paths. Collisions fail explicitly: review conflicting external entries and, with authorization, remove through `remove-extras` before retry. Valid manifests/selection/native profile and successful pending recovery remain required.
 
+Recorded infrastructure is the exception: its canonical descriptor/source evidence remains retained even when the current generated source is lost or rotated. A pending infrastructure-role record marks acquisition intent written before adding the backend; repeated internal setup reconciles a completed add from canonical profile evidence without advancing packages. Preserve that state and native generations; do not guess ownership from names or delete the record to make the backend removable. This internal component has no public setup command yet and refuses pending package recovery; use the existing package-operation recovery path first. Successful acquisition is not rolled back if later setup work fails.
+
 ## Retained generation rollback
 
 Only with dotm/native writers stopped, inspect history:
