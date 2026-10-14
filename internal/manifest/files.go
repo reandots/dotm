@@ -92,6 +92,22 @@ func FilesPath() (string, error) {
 // An empty localPath omits local input; a missing local file means no local exclusions.
 // Decode/I/O failures are returned separately; declaration errors remain in the model.
 func (d *Data) Files(roots []string, localPath string) (FileModel, error) {
+	return d.files(roots, func(model *FileModel) error {
+		if localPath == "" {
+			return nil
+		}
+		return model.loadLocal(localPath)
+	})
+}
+
+// FilesContents validates planned local declarations without filesystem writes.
+func (d *Data) FilesContents(roots []string, path string, content []byte) (FileModel, error) {
+	return d.files(roots, func(model *FileModel) error {
+		return model.loadLocalContents(path, content, nil)
+	})
+}
+
+func (d *Data) files(roots []string, loadLocal func(*FileModel) error) (FileModel, error) {
 	resolved, err := d.Resolve(roots)
 	if err != nil {
 		return FileModel{}, err
@@ -105,20 +121,23 @@ func (d *Data) Files(roots []string, localPath string) (FileModel, error) {
 	for i := range model.Declarations {
 		model.Declarations[i].Selected = selected[model.Declarations[i].Application]
 	}
-	if localPath != "" {
-		if err := model.loadLocal(localPath); err != nil {
-			return FileModel{}, err
-		}
+	if err := loadLocal(&model); err != nil {
+		return FileModel{}, err
 	}
 	model.lint()
 	return model, nil
 }
 
 func (m *FileModel) loadLocal(path string) error {
+	content, err := os.ReadFile(path)
+	return m.loadLocalContents(path, content, err)
+}
+
+func (m *FileModel) loadLocalContents(path string, content []byte, readErr error) error {
 	var local struct {
 		Unmanaged map[string][]string `toml:"unmanaged"`
 	}
-	if err := decode(path, &local); err != nil {
+	if err := decodeContents(path, content, &local, readErr); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}

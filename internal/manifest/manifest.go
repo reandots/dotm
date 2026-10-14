@@ -55,8 +55,7 @@ var (
 	attribute  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_'-]*(\.[a-zA-Z_][a-zA-Z0-9_'-]*)*$`)
 )
 
-func decode(path string, target any) error {
-	content, err := os.ReadFile(path)
+func decodeContents(path string, content []byte, target any, err error) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
@@ -68,6 +67,20 @@ func decode(path string, target any) error {
 
 // Load validates the entire catalog and every configuration, including unselected ones.
 func Load(dir string) (*Data, error) {
+	return load(dir, os.ReadFile)
+}
+
+// LoadContents validates planned manifests without creating files or changing their path context.
+func LoadContents(dir string, catalog, configurations []byte) (*Data, error) {
+	return load(dir, func(path string) ([]byte, error) {
+		if filepath.Base(path) == "catalog.toml" {
+			return catalog, nil
+		}
+		return configurations, nil
+	})
+}
+
+func load(dir string, readFile func(string) ([]byte, error)) (*Data, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve catalog directory: %w", err)
@@ -82,7 +95,8 @@ func Load(dir string) (*Data, error) {
 		PostCfgHook  *string  `toml:"post_cfg_hook"`
 	}
 	catalogPath := filepath.Join(dir, "catalog.toml")
-	if err := decode(catalogPath, &catalog); err != nil {
+	catalogContent, readErr := readFile(catalogPath)
+	if err := decodeContents(catalogPath, catalogContent, &catalog, readErr); err != nil {
 		return nil, err
 	}
 	d := &Data{Apps: make(map[string]Application), Configs: make(map[string]Configuration), CatalogDir: dir}
@@ -188,7 +202,8 @@ func Load(dir string) (*Data, error) {
 	var configurations struct {
 		Configurations []Configuration `toml:"configurations"`
 	}
-	if err := decode(configPath, &configurations); err != nil {
+	configurationContent, readErr := readFile(configPath)
+	if err := decodeContents(configPath, configurationContent, &configurations, readErr); err != nil {
 		return nil, err
 	}
 	for _, config := range configurations.Configurations {
@@ -296,20 +311,33 @@ func SelectionPath() (string, error) {
 }
 
 func (d *Data) Selection(path string) (Configuration, error) {
+	content, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return Configuration{}, fmt.Errorf("%s: %w", path, readErr)
+	}
+	name, err := SelectionContents(path, content)
+	if err != nil {
+		return Configuration{}, err
+	}
+	config, ok := d.Configs[name]
+	if !ok {
+		return Configuration{}, fmt.Errorf("%s: unknown configuration %q", path, name)
+	}
+	return config, nil
+}
+
+// SelectionContents validates machine-local selection bytes without reading a file.
+func SelectionContents(path string, content []byte) (string, error) {
 	var selection struct {
 		Configuration string `toml:"configuration"`
 	}
-	if err := decode(path, &selection); err != nil {
-		return Configuration{}, err
+	if err := decodeContents(path, content, &selection, nil); err != nil {
+		return "", err
 	}
-	if selection.Configuration == "" {
-		return Configuration{}, fmt.Errorf("%s: configuration is required", path)
+	if !identifier.MatchString(selection.Configuration) {
+		return "", fmt.Errorf("%s: configuration requires a valid configuration name", path)
 	}
-	config, ok := d.Configs[selection.Configuration]
-	if !ok {
-		return Configuration{}, fmt.Errorf("%s: unknown configuration %q", path, selection.Configuration)
-	}
-	return config, nil
+	return selection.Configuration, nil
 }
 
 // Key identifies a descriptor independently of the order of its selected outputs.

@@ -163,6 +163,16 @@ func localRepositoryPath(repository string) (string, bool) {
 	return repository, !strings.Contains(repository, ":")
 }
 
+// InferRepository validates an existing source checkout and returns its single
+// effective origin URL without contacting the remote or changing the checkout.
+func InferRepository(ctx context.Context, source string) (string, error) {
+	state, err := inspectCheckout(ctx, source)
+	if err != nil {
+		return "", err
+	}
+	return state.repository, nil
+}
+
 // ValidateRepository confirms that the existing checkout's origin matches the
 // configured repository without contacting the remote.
 func ValidateRepository(ctx context.Context, source, repository string) error {
@@ -205,7 +215,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 
 func gitEnvironment() []string {
 	environment := os.Environ()
-	filtered := make([]string, 0, len(environment)+2)
+	filtered := make([]string, 0, len(environment)+3)
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		if strings.HasPrefix(name, "GIT_") {
@@ -213,7 +223,8 @@ func gitEnvironment() []string {
 		}
 		filtered = append(filtered, entry)
 	}
-	return append(filtered, "GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1")
+	// Passive inspection must not refresh/write the index; required mutation locks remain enabled.
+	return append(filtered, "GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1", "GIT_OPTIONAL_LOCKS=0")
 }
 
 func handoffError(err error) error {
