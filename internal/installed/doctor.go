@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dotm/internal/chezmoi"
 	"dotm/internal/manifest"
 )
 
@@ -97,25 +96,13 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 			"Set XDG_CACHE_HOME to an absolute path in the user session.", 1, false)
 	}
 	base, baseErr := stateHome()
-	var role infrastructureState
-	var roleErr error
 	if baseErr == nil {
-		role, roleErr = readInfrastructure(base)
-		if roleErr != nil {
-			message := fmt.Sprintf("cannot inspect infrastructure state: %v", roleErr)
-			add("infrastructure", message, "Repair the private infrastructure state file.", 3, false)
-		} else if role.Pending {
-			message := "infrastructure acquisition is pending; doctor did not attempt recovery"
-			add("infrastructure", message, "Rerun dotm init after correcting prerequisites.", 3, false)
-		}
 		if pendingErr := CheckPendingRecovery(); pendingErr != nil {
 			add("package recovery", pendingErr.Error(),
 				"Correct the prerequisite and resume a supported package operation; doctor never recovers.", 3, false)
 		}
 	}
 	profile := ""
-	var report Report
-	profileReady := false
 	if baseErr != nil {
 		remedy := "Set an absolute XDG_STATE_HOME or correct the home directory."
 		add("profile", baseErr.Error(), remedy, 1, false)
@@ -127,33 +114,21 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 			message := fmt.Sprintf("cannot inspect native profile: %v", err)
 			add("profile", message, "Repair profile path permissions or dangling links.", 3, false)
 		case !exists:
-			if role.Descriptor != "" {
-				add("profile", "standard native profile is absent despite recorded infrastructure",
-					"Inspect the retained backend state and rerun dotm init after correcting prerequisites.", 3, false)
-			} else {
-				add("profile", "standard native profile is absent (first use)",
-					"Run init after host prerequisites are prepared.", 0, false)
-			}
+			add("profile", "standard native profile is absent (first use)",
+				"Run init after host prerequisites are prepared.", 0, false)
 		default:
 			manifestErr := validateNativeManifest(profile)
 			if manifestErr != nil {
-				message := fmt.Sprintf("native profile manifest is unusable: %v", manifestErr)
-				remedy := "Repair the native Nix profile; doctor does not recover it."
-				add("profile", message, remedy, 3, false)
+				add("profile", fmt.Sprintf("native profile manifest is unusable: %v", manifestErr),
+					"Repair the native Nix profile; doctor does not recover it.", 3, false)
 			} else if nixErr != nil {
-				message := "native profile inspection blocked because Nix is unavailable"
-				add("profile", message, "Prepare Nix through host provisioning.", 0, true)
-			} else if roleErr != nil {
-				add("profile", "native role classification blocked by invalid infrastructure state", "", 0, true)
+				add("profile", "native profile inspection blocked because Nix is unavailable",
+					"Prepare Nix through host provisioning.", 0, true)
+			} else if _, inspectErr := Inspect(ctx, manifest.Resolved{}); inspectErr != nil {
+				add("profile", fmt.Sprintf("native profile is unusable: %v", inspectErr),
+					"Repair the native Nix profile; doctor does not recover it.", 3, false)
 			} else {
-				report, err = Inspect(ctx, manifest.Resolved{})
-				if err != nil {
-					add("profile", fmt.Sprintf("native profile is unusable: %v", err),
-						"Repair the native Nix profile; doctor does not recover it.", 3, false)
-				} else {
-					add("profile", "native profile is readable", "", 0, false)
-					profileReady = true
-				}
+				add("profile", "native profile is readable", "", 0, false)
 			}
 		}
 	}
@@ -190,25 +165,12 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 	} else {
 		add("git", "Git is operational", "", 0, false)
 	}
-	var selected string
-	var backendErr error
-	if roleErr != nil || (role.Descriptor != "" && !profileReady) {
-		add("chezmoi", "recorded backend discovery is blocked by profile/infrastructure failure", "", 0, true)
-		return findings, ""
-	}
-	if role.Descriptor != "" {
-		selected, backendErr = retainedChezmoi(report)
-	} else {
-		selected, backendErr = pathChezmoi()
-	}
+	selected, backendErr := resolveOperationalChezmoi(ctx)
 	if backendErr != nil {
-		add("chezmoi", backendErr.Error(), "Repair the selected backend or its canonical profile entry.", 3, false)
+		add("chezmoi", backendErr.Error(), "Repair the selected backend.", 3, false)
 	} else if selected == "" {
 		add("chezmoi", "chezmoi executable unavailable",
-			"Run dotm init to acquire the infrastructure backend after host prerequisites are prepared.", 3, false)
-	} else if probeErr := chezmoi.ProbeExecutable(ctx, selected); probeErr != nil {
-		add("chezmoi", fmt.Sprintf("chezmoi compatibility probe failed: %v", probeErr),
-			"Provide a compatible chezmoi executable; doctor does not replace it.", 3, false)
+			"Run dotm init to acquire chezmoi after host prerequisites are prepared.", 3, false)
 	} else {
 		executable = selected
 		add("chezmoi", "chezmoi is operational and compatible", "", 0, false)
@@ -296,33 +258,6 @@ func probeGit(ctx context.Context, git string) error {
 		return fmt.Errorf("git rev-parse returned unsupported result %q", strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-func retainedChezmoi(report Report) (string, error) {
-	if len(report.Infrastructure) != 1 || !report.Infrastructure[0].Active {
-		return "", fmt.Errorf("recorded chezmoi needs exactly one active canonical native entry")
-	}
-	var executable string
-	for _, store := range report.Infrastructure[0].StorePaths {
-		path := filepath.Join(store, "bin", "chezmoi")
-		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return "", fmt.Errorf("inspect retained chezmoi: %w", err)
-		}
-		candidate, err := usableChezmoi(path)
-		if err != nil {
-			return "", err
-		}
-		if executable != "" && executable != candidate {
-			return "", fmt.Errorf("canonical chezmoi entry exposes multiple different executables")
-		}
-		executable = candidate
-	}
-	if executable == "" {
-		return "", fmt.Errorf("canonical chezmoi entry has no executable")
-	}
-	return executable, nil
 }
 
 func validateNativeManifest(profile string) error {

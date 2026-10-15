@@ -19,10 +19,18 @@ import (
 // The returned report is freshly inspected after any attempted mutation, even
 // on failure. An empty Profile means inspection itself failed.
 func Install(
-	ctx context.Context,
-	desired manifest.Resolved,
-	stderr io.Writer,
-	options ConfigurationOptions,
+	ctx context.Context, desired manifest.Resolved, stderr io.Writer, options ConfigurationOptions,
+) (Report, error) {
+	return install(ctx, desired, stderr, options, true)
+}
+
+func installPackages(ctx context.Context, desired manifest.Resolved, stderr io.Writer) (Report, error) {
+	return install(ctx, desired, stderr, ConfigurationOptions{}, false)
+}
+
+func install(
+	ctx context.Context, desired manifest.Resolved, stderr io.Writer,
+	options ConfigurationOptions, configureAfter bool,
 ) (report Report, resultErr error) {
 	output := &operationOutput{Writer: stderr}
 	stderr = output
@@ -63,7 +71,10 @@ func Install(
 		return report, operationError(SeverityInstallation, err)
 	}
 	if len(missing) == 0 {
-		return configure(ctx, desired, before, stderr, options)
+		if configureAfter {
+			return configure(ctx, desired, before, stderr, options)
+		}
+		return before, nil
 	}
 	var operationErr error
 	if state.Healthy {
@@ -92,7 +103,10 @@ func Install(
 			))
 		}
 	}
-	return configure(ctx, desired, after, stderr, options)
+	if configureAfter {
+		return configure(ctx, desired, after, stderr, options)
+	}
+	return after, nil
 }
 
 func installationPlan(
@@ -129,14 +143,6 @@ func installationPlan(
 				e.Name,
 			)
 		}
-		packages[p.Key()] = p
-	}
-	for _, e := range before.Infrastructure {
-		if p, ok := descriptor(e.Descriptor); ok {
-			packages[p.Key()] = p
-		}
-	}
-	if p, ok := descriptor(before.retainedDescriptor); ok {
 		packages[p.Key()] = p
 	}
 	for _, p := range desired.Packages {

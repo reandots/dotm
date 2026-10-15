@@ -19,8 +19,8 @@ Examples use the default data directory. Add `--data-dir /path/to/data` for anot
 | `files lint` | Check declarations, effective native rules, and published policy integration |
 | `files refresh [--update-source]` | Build/check/publish policy; only the explicit flag acquires/updates source |
 | `files status` | Refresh policy locally and inventory managed changes/unclassified files; never fetch |
-| `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired and recorded infrastructure descriptors |
-| `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs, chezmoi backend/source, owned ignore integration, and initial policy; no application deployment |
+| `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired/shared descriptors |
+| `init [--configuration NAME] [--repository URL]` | Prepare inputs, acquire missing catalog-selected chezmoi/dependencies, set up source/integration/policy; no destination application |
 | `doctor` | Read-only dotm/source/policy, backend, host, and current-session diagnostics; no repairs |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | Separate history pruning and optional shared-store GC; no manifests/selection required |
 
@@ -28,11 +28,11 @@ The files commands evaluate trusted templates but do not apply configurations, r
 
 ## Initialize dotm
 
-`init` completes first-time setup for an already installed/running dotm. It is not an installer for dotm itself. Prepare Nix and Git externally; init may acquire only the missing chezmoi infrastructure backend. See [installation](installation.md#initialize-dotm) for prerequisites and examples.
+`init` prepares an already running dotm, not the dotm executable. Prepare Nix/Git externally. Missing chezmoi is declared in the catalog, selected in the current configuration, and installed with only its dependency closure; custom declarations are preserved. Compatible external executables are reused without automatic selection/adoption. See [installation](installation.md#initialize-dotm).
 
 Supply `--configuration` and `--repository` when local inputs do not already provide an unambiguous choice. The global `--data-dir` selects shared manifests, not machine-local settings. Init validates local inputs and paths before writes and collects separate approvals for local-intent changes and source replacement. It has no `--yes` bypass: cancellation/EOF fails safely.
 
-The command prepares approved dotm files, backend, source checkout, compatible static chezmoi settings, root ignore integration, and initial published policy, then checks normal discovery. A matching checkout is checked locally without fetch/fast-forward; it does not overwrite unrelated dirty or native-rule content. Init never installs selected applications, runs hooks, applies destinations, auto-commits, or silently changes origin. Unsafe/damaged integration needs correction rather than automatic rewriting. Review reported created/changed files, package effects, retained replacement backups, and policy publication, then review and commit source changes yourself. Stages are not a cross-resource transaction: a later error may follow completed effects. Re-running successful setup makes no unnecessary changes.
+Init prepares approved files, backend, checkout, compatible static settings, root ignore integration and policy, then checks normal discovery. Matching checkouts are validated without fetch/fast-forward; dirty content and native rules remain. Only missing chezmoi and dependencies may be installed, with their package pre-hooks; other selected applications, configuration hooks and destinations are not deployed. No auto-commits or silent origin changes occur. Unsafe integration requires manual correction. Review completed manifest/package/source effects and retained backups, then commit shared-manifest and checkout changes yourself. Later errors retain earlier effects; repeat after repair.
 
 ## Diagnose setup
 
@@ -51,7 +51,7 @@ Failures appear once on stderr; warnings, results and blocked checks use stdout.
 ./dotm status
 ```
 
-Status distinguishes installed, partial, missing, and package-free applications, explicit native entries, retained infrastructure, and removable extras. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
+Status distinguishes installed, partial, missing, and package-free applications, explicit native entries, and removable extras. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
 
 With healthy source state, installation adds only missing descriptors, including missing pieces of multi-package applications, and preserves installed entries, extras, and the source lock. Repeating a satisfied install still runs configured hooks/configuration phases. Ambiguous desired native entries fail rather than being automatically repaired.
 
@@ -81,7 +81,7 @@ Each extra catalog application is confirmed separately. Desired/shared component
 
 Removal does not change the lock, prune generations, delete store objects, or undo user-data effects. A native failure can leave partial changes; actual state is reported without automatic rollback/retry.
 
-Recorded infrastructure chezmoi is not an extra and cannot be removed by this command, even with `--yes` or after dropping an application sharing its descriptor. Only canonical source/descriptor evidence tied to the machine-local role is protected; an unrelated package exposing a `chezmoi` binary remains removable. An infrastructure-only backend is not an application-update target; sharing with an explicitly selected application permits normal update semantics.
+Chezmoi is an ordinary selected application: it updates within the selected scope and becomes removable when no longer desired/shared. Install/update resolve and probe the current profile executable after package work, using the new version even without profile PATH exposure. Backend incompatibility fails configuration work while retaining successful package changes.
 
 ## History and disk space
 

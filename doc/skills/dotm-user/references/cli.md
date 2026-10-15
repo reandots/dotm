@@ -19,10 +19,10 @@ Assume `dotm` is already installed and available on PATH; invoke it directly as 
 | `files status` | Refresh local policy and inventory files; no fetch or apply |
 | `remove-extras [--yes]` | Explicitly approved extra native package entries only |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | History pruning and explicitly optional shared-store GC; no manifests/local selection |
-| `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs and chezmoi/policy integration; never deploys selected applications |
+| `init [--configuration NAME] [--repository URL]` | Prepare inputs, install only missing catalog-selected chezmoi/dependencies, set up source/policy; no destination application |
 | `doctor` | Read-only inputs/source/policy, backend/host, and current-session diagnostics; no fixes |
 
-There is no generic install/update dry run, positional `install <app>`, force-conflict option, or implicit removal. `init` prepares an already installed dotm; it does not install dotm, Nix, or Git, and does not install selected applications, run hooks, or apply destinations. It has no `--yes` bypass. `show` and `status` inspect scope, not a guarantee of future backend success. Files commands require their file workflow and do not inspect Nix, apply files, or run application hooks. Only `cfg lint` is passive source lint; files checks may execute template helpers.
+There is no generic install/update dry run, positional `install <app>`, force-conflict option, or implicit removal. Init prepares an already installed dotm; it does not install dotm, Nix, or Git. Only missing chezmoi and dependencies may be installed with package pre-hooks, not the rest of the selected applications; no configuration hooks or destinations are applied. Init has no `--yes` bypass. Show/status inspect scope, not guaranteed backend success. Files commands require their workflow, do not inspect Nix/apply files/run application hooks, and may evaluate templates; only `cfg lint` is passive source lint.
 
 ## Install versus update
 
@@ -31,6 +31,8 @@ Healthy `install` adds only missing descriptors, completes partial multi-package
 `update` advances the source lock and uses active installed desired package evidence. Partial applications, newly added components, and their full current transitive logical dependencies participate. A shared active descriptor may seed multiple applications. An installed companion does not seed its absent parent; inactive entries alone do not seed an update. Wholly absent independent applications remain for `install`. Extras keep versions. With no active managed candidates, package work is a no-op, but eligible desired configurations can still run. Report source revision advancement separately from actual package path/version changes.
 
 Readiness requires all packages in an application's dependency closure; package-free applications need no installation marker. This does not mean configuration files are synchronized. `update cfg` skips applications missing required packages, rather than installing them.
+
+Chezmoi follows the same selection, update and removal rules as any application. No special infrastructure protection exists. Install/update resolve and verify the current profile binary after package work, using a newly installed version without requiring profile PATH exposure. Package pre-hooks cannot assume a first-time package already exists. Backend incompatibility is a configuration-stage failure and retains completed package updates.
 
 ## Verify the requested change
 

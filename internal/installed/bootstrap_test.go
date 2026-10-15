@@ -2,12 +2,10 @@ package installed
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"dotm/internal/manifest"
@@ -15,304 +13,132 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type BootstrapSuite struct{ suite.Suite }
+type ChezmoiBootstrapSuite struct{ suite.Suite }
 
-func TestBootstrapSuite(t *testing.T) { suite.Run(t, new(BootstrapSuite)) }
+func TestChezmoiBootstrapSuite(t *testing.T) { suite.Run(t, new(ChezmoiBootstrapSuite)) }
 
-func (s *BootstrapSuite) fixture() (string, string, string) {
+func (s *ChezmoiBootstrapSuite) TestAbsentBackendDoesNotCreateState() {
+	root := s.T().TempDir()
+	s.T().Setenv("HOME", root)
+	s.T().Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+	s.T().Setenv("PATH", filepath.Join(root, "bin"))
+	executable, err := FindChezmoi(context.Background())
+	s.Require().NoError(err)
+	s.Empty(executable)
+	s.NoDirExists(filepath.Join(root, "state"))
+}
+
+func (s *ChezmoiBootstrapSuite) backend() string {
 	s.T().Helper()
 	backend, err := exec.LookPath("chezmoi")
 	if err != nil {
-		s.T().Skip("real chezmoi required for operational compatibility probe")
+		s.T().Skip("chezmoi is required for bootstrap capability tests")
 	}
-	git, err := exec.LookPath("git")
+	backend, err = filepath.EvalSymlinks(backend)
 	s.Require().NoError(err)
-	python, err := exec.LookPath("python3")
-	s.Require().NoError(err)
+	return backend
+}
+
+func (s *ChezmoiBootstrapSuite) TestIncompatiblePATHCandidateIsNotShadowedByProfile() {
+	backend := s.backend()
 	root := s.T().TempDir()
-	state, bin, store := filepath.Join(root, "state"), filepath.Join(root, "bin"), filepath.Join(root, "store")
-	for _, dir := range []string{bin, filepath.Join(store, "bin"), filepath.Join(state, "nix", "profile")} {
+	state := filepath.Join(root, "state")
+	pathBin := filepath.Join(root, "path-bin")
+	profileBin := filepath.Join(state, "nix", "profile", "bin")
+	for _, dir := range []string{pathBin, profileBin} {
 		s.Require().NoError(os.MkdirAll(dir, 0o700))
 	}
-	s.Require().NoError(os.Symlink(backend, filepath.Join(store, "bin", "chezmoi")))
-	s.Require().NoError(os.Symlink(git, filepath.Join(bin, "git")))
-	profile := filepath.Join(state, "nix", "profile")
-	s.Require().NoError(os.WriteFile(filepath.Join(profile, "manifest.json"),
-		[]byte(`{"version":3,"elements":{}}`), 0o600))
-	s.T().Setenv("HOME", filepath.Join(root, "home"))
+	// #nosec G306 -- Private executable fixture deliberately fails compatibility probing.
+	s.Require().NoError(os.WriteFile(filepath.Join(pathBin, "chezmoi"), []byte("#!/bin/sh\nexit 1\n"), 0o700))
+	s.Require().NoError(os.Symlink(backend, filepath.Join(profileBin, "chezmoi")))
+	s.T().Setenv("HOME", root)
 	s.T().Setenv("XDG_STATE_HOME", state)
-	s.T().Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
-	s.T().Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
-	s.T().Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
-	s.T().Setenv("PATH", bin)
-	s.T().Setenv("BOOTSTRAP_STORE", store)
-	s.T().Setenv("BOOTSTRAP_FAIL", "")
-	script := "#!" + python + `
-import json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-state = Path(os.environ['XDG_STATE_HOME'])
-manifest = state / 'nix/profile/manifest.json'
-if args[:2] == ['profile', 'list']:
-    print(manifest.read_text())
-    sys.exit(0)
-with (state / 'mutations').open('a') as log:
-    log.write(' '.join(args[:2]) + '\n')
-if args[:2] == ['flake', 'lock']:
-    source = Path(args[2].removeprefix('path:'))
-    lock = {'version': 7, 'root': 'root', 'nodes': {
-        'root': {'inputs': {'nixpkgs': 'nixpkgs'}},
-        'nixpkgs': {'locked': {'type': 'github', 'owner': 'NixOS', 'repo': 'nixpkgs',
-            'rev': '0' * 40, 'narHash': 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='}}}}
-    (source / 'flake.lock').write_text(json.dumps(lock))
-elif args[:2] == ['profile', 'add']:
-    if os.environ['BOOTSTRAP_FAIL']: sys.exit(23)
-    data = json.loads(manifest.read_text())
-    for ref in args:
-        if not ref.startswith('path:'): continue
-        source, attr = ref.split('#', 1)
-        data['elements']['backend'] = {'active': True, 'attrPath': attr,
-            'originalUrl': source, 'url': source, 'outputs': None,
-            'storePaths': [os.environ['BOOTSTRAP_STORE']]}
-    manifest.write_text(json.dumps(data))
-elif args[:2] == ['profile', 'remove']:
-    data = json.loads(manifest.read_text())
-    for name in args[args.index('--') + 1:]: del data['elements'][name]
-    manifest.write_text(json.dumps(data))
-else: raise SystemExit('unexpected mutation: ' + str(args))
-`
-	// #nosec G306 -- Private executable fake Nix for isolated bootstrap scenarios.
-	s.Require().NoError(os.WriteFile(filepath.Join(bin, "nix"), []byte(script), 0o700))
-	return state, bin, backend
+	s.T().Setenv("PATH", pathBin)
+	executable, err := FindChezmoi(context.Background())
+	s.Require().Error(err)
+	s.Empty(executable)
+	operational, err := resolveOperationalChezmoi(context.Background())
+	s.Require().NoError(err)
+	s.Equal(backend, operational)
 }
 
-func (s *BootstrapSuite) TestAcquisitionRepeatSharingRemovalAndPendingRoleReconciliation() {
-	state, _, backend := s.fixture()
-	ctx := context.Background()
-	first, err := BootstrapChezmoi(ctx, io.Discard)
+func (s *ChezmoiBootstrapSuite) TestFailedAddRetainsEffectsAndRetryInstallsOnlyApplicationClosure() {
+	backend := s.backend()
+	git, err := exec.LookPath("git")
 	s.Require().NoError(err)
-	s.Equal(backend, first.Executable)
-	s.True(first.Retained)
-	s.Require().Len(first.Report.Infrastructure, 1)
-	s.Empty(first.Report.Extras)
-	lock := mustRead(s.T(), filepath.Join(first.Source, "flake.lock"))
-	mutations := mustRead(s.T(), filepath.Join(state, "mutations"))
-	role, err := readInfrastructure(state)
+	fixture := &SourceStateRecoverySuite{}
+	fixture.SetT(s.T())
+	state, profile, source := fixture.fixture()
+	bin := filepath.Join(filepath.Dir(state), "bin")
+	s.Require().NoError(os.Symlink(git, filepath.Join(bin, "git")))
+	s.T().Setenv("HOME", filepath.Dir(state))
+	s.T().Setenv("BOOTSTRAP_BACKEND", backend)
+	nixPath := filepath.Join(bin, "nix")
+	nix, err := os.ReadFile(nixPath)
 	s.Require().NoError(err)
-	s.False(role.Pending)
-	role.Pending = true // Simulate death after add, before final role recording.
-	s.Require().NoError(writeInfrastructure(state, role))
-	reconciled, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	s.Equal(first.Executable, reconciled.Executable)
-	role, err = readInfrastructure(state)
-	s.Require().NoError(err)
-	s.False(role.Pending)
-	repeated, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	s.Empty(repeated.Effects)
-	s.Equal(mutations, mustRead(s.T(), filepath.Join(state, "mutations")))
-	s.Equal(lock, mustRead(s.T(), filepath.Join(first.Source, "flake.lock")))
-	pkg := manifest.Package{Attr: "chezmoi"}
-	desired := manifest.Resolved{
-		Packages:     []manifest.Package{pkg},
-		Applications: []manifest.Application{{ID: "shared", Packages: []manifest.Package{pkg}}},
+	nix = append(nix, []byte(`
+if args[:2] == ['profile', 'add']:
+    binary = Path(os.environ['FAKE_PROFILE']) / 'bin' / 'chezmoi'
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.symlink_to(os.environ['BOOTSTRAP_BACKEND'])
+`)...)
+	// #nosec G306 G703 -- Existing private fake Nix path is obtained only from this test fixture.
+	s.Require().NoError(os.WriteFile(nixPath, nix, 0o700))
+	hook := filepath.Join(filepath.Dir(state), "pre")
+	for _, id := range []string{"helper", "chezmoi"} {
+		// #nosec G306 -- Private hooks log their names to prove dependency-first execution.
+		s.Require().NoError(os.WriteFile(hook+"-"+id,
+			[]byte("#!/bin/sh\nprintf '%s\\n' \"${0##*/}\" >> \"$HOME/pre.log\"\n"), 0o700))
 	}
-	shared, err := Inspect(ctx, desired)
+	data := manifest.Data{CatalogDir: filepath.Dir(state), Apps: map[string]manifest.Application{
+		"helper": {ID: "helper", Packages: []manifest.Package{{Attr: "jq"}}, PreHook: hook + "-helper"},
+		"chezmoi": {
+			ID: "chezmoi", Dependencies: []string{"helper"}, Packages: []manifest.Package{{Attr: "chezmoi"}},
+			PreHook: hook + "-chezmoi", PreCfgHook: "must-not-run",
+			Configs: []string{filepath.Join(state, "destination")},
+		},
+	}}
+	desired, err := data.Resolve([]string{"chezmoi"})
 	s.Require().NoError(err)
-	s.True(shared.Applications[0].Ready)
-	s.Len(shared.Entries, 1)
-	// Dropping that catalog application does not authorize backend removal.
-	removed, err := RemoveExtras(ctx, &manifest.Data{}, manifest.Resolved{}, true, strings.NewReader(""), io.Discard)
-	s.Require().NoError(err)
-	s.Equal(first.Report.Entries, removed.Entries)
-	// Simulated later caller failure cannot undo or hide the successful acquisition.
-	s.NotEmpty(first.Effects)
-	s.Equal(first.Executable, repeated.Executable)
-}
-
-func (s *BootstrapSuite) TestExternalReuseDoesNotClaimOwnership() {
-	state, bin, backend := s.fixture()
-	s.Require().NoError(os.Symlink(backend, filepath.Join(bin, "chezmoi")))
-	result, err := BootstrapChezmoi(context.Background(), io.Discard)
+	lock := mustRead(s.T(), filepath.Join(source, "flake.lock"))
+	s.T().Setenv("FAKE_FAIL_ADD", "1")
+	failed, err := BootstrapChezmoi(context.Background(), desired, io.Discard)
+	s.Require().Error(err)
+	s.Equal(lock, mustRead(s.T(), filepath.Join(source, "flake.lock")))
+	s.Equal("pre-helper\npre-chezmoi\n", mustRead(s.T(), filepath.Join(filepath.Dir(state), "pre.log")))
+	s.Empty(failed.Executable)
+	// The generated source expansion is retained even when the native add failed.
+	paths := make([]string, 0, len(failed.Effects))
+	for _, effect := range failed.Effects {
+		paths = append(paths, effect.Path)
+	}
+	s.Contains(paths, filepath.Join(source, "flake.nix"))
+	s.T().Setenv("FAKE_FAIL_ADD", "")
+	result, err := BootstrapChezmoi(context.Background(), desired, io.Discard)
 	s.Require().NoError(err)
 	s.Equal(backend, result.Executable)
-	s.False(result.Retained)
-	s.Empty(result.Effects)
+	s.NoFileExists(filepath.Join(state, "destination"))
 	s.NoFileExists(filepath.Join(state, "dotm", "infrastructure.json"))
-	s.NoFileExists(filepath.Join(state, "mutations"))
-}
-
-func (s *BootstrapSuite) TestUnusableCandidatesAndPrerequisitesFailBeforeMutation() {
-	for _, scenario := range []string{"incompatible", "non-executable", "dangling", "missing-git", "pending-recovery"} {
-		s.Run(scenario, func() {
-			state, bin, _ := s.fixture()
-			candidate := filepath.Join(bin, "chezmoi")
-			switch scenario {
-			case "incompatible":
-				// #nosec G306 -- Private incompatible executable fixture.
-				s.Require().NoError(os.WriteFile(candidate, []byte("#!/bin/sh\nexit 7\n"), 0o700))
-			case "non-executable":
-				s.Require().NoError(os.WriteFile(candidate, []byte("not executable"), 0o600))
-			case "dangling":
-				s.Require().NoError(os.Symlink(filepath.Join(bin, "absent"), candidate))
-			case "missing-git":
-				s.Require().NoError(os.Remove(filepath.Join(bin, "git")))
-			case "pending-recovery":
-				s.Require().NoError(os.MkdirAll(filepath.Join(state, "dotm"), 0o700))
-				journal := filepath.Join(state, "dotm", updateJournalName)
-				s.Require().NoError(os.WriteFile(journal, []byte("pending"), 0o600))
-			}
-			_, err := BootstrapChezmoi(context.Background(), io.Discard)
-			s.Require().Error(err)
-			s.NoFileExists(filepath.Join(state, "mutations"))
-			s.NoFileExists(filepath.Join(state, "dotm", "infrastructure.json"))
-		})
+	report, err := Inspect(context.Background(), desired)
+	s.Require().NoError(err)
+	s.Len(report.Extras, 1, "unrelated existing hello remains removable")
+	for _, app := range report.Applications {
+		s.True(app.Ready, app.ID)
 	}
+	before := mustRead(s.T(), filepath.Join(profile, "manifest.json"))
+	repeated, err := BootstrapChezmoi(context.Background(), desired, io.Discard)
+	s.Require().NoError(err)
+	s.Empty(repeated.Effects)
+	s.Equal(before, mustRead(s.T(), filepath.Join(profile, "manifest.json")))
 }
 
-func (s *BootstrapSuite) TestFailedAddKeepsRecoverableIntentAndSource() {
-	state, _, _ := s.fixture()
-	s.T().Setenv("BOOTSTRAP_FAIL", "1")
-	failed, err := BootstrapChezmoi(context.Background(), io.Discard)
-	s.Require().Error(err)
-	s.Empty(failed.Executable)
-	s.NotEmpty(failed.Source)
-	s.NotEmpty(failed.Effects)
-	role, err := readInfrastructure(state)
-	s.Require().NoError(err)
-	s.True(role.Pending)
-	lock := mustRead(s.T(), filepath.Join(failed.Source, "flake.lock"))
-	s.T().Setenv("BOOTSTRAP_FAIL", "")
-	retry, err := BootstrapChezmoi(context.Background(), io.Discard)
-	s.Require().NoError(err)
-	s.Equal(failed.Source, retry.Source)
-	s.Equal(lock, mustRead(s.T(), filepath.Join(retry.Source, "flake.lock")))
-	s.Len(retry.Report.Infrastructure, 1)
-}
-
-func (s *BootstrapSuite) TestUnrelatedExtrasRemainRemovable() {
-	_, _, _ = s.fixture()
-	ctx := context.Background()
-	result, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	path := filepath.Join(result.Report.Profile, "manifest.json")
-	var data struct {
-		Version  int                        `json:"version"`
-		Elements map[string]json.RawMessage `json:"elements"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(mustRead(s.T(), path)), &data))
-	data.Elements["unrelated"] = json.RawMessage(`{"active":true,"storePaths":["/nix/store/unrelated-chezmoi"]}`)
-	content, err := json.Marshal(data)
-	s.Require().NoError(err)
-	s.Require().NoError(os.WriteFile(path, content, 0o600))
-	removed, err := RemoveExtras(ctx, &manifest.Data{}, manifest.Resolved{}, true, strings.NewReader(""), io.Discard)
-	s.Require().NoError(err)
-	s.Empty(removed.Extras)
-	s.Equal(result.Report.Entries, removed.Entries)
-}
-
-func (s *BootstrapSuite) TestCanonicalRoleSurvivesSourceLossWithoutAdoptingOtherEntries() {
-	state, _, _ := s.fixture()
-	ctx := context.Background()
-	first, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	path := filepath.Join(first.Report.Profile, "manifest.json")
-	var data struct {
-		Version  int                        `json:"version"`
-		Elements map[string]json.RawMessage `json:"elements"`
-	}
-	s.Require().NoError(json.Unmarshal([]byte(mustRead(s.T(), path)), &data))
-	foreign := sourceEntry("packages.x86_64-linux.dotm_68656c6c6f", "path:"+first.Source, nil)
-	encoded, err := json.Marshal(foreign)
-	s.Require().NoError(err)
-	data.Elements["old-app"] = encoded
-	encoded, err = json.Marshal(data)
-	s.Require().NoError(err)
-	s.Require().NoError(os.WriteFile(path, encoded, 0o600))
-	s.Require().NoError(os.Remove(filepath.Join(first.Source, "flake.lock")))
-	report, err := Inspect(ctx, manifest.Resolved{})
-	s.Require().NoError(err)
-	s.Require().Len(report.Infrastructure, 1)
-	s.Require().Len(report.Extras, 1)
-	s.Equal("old-app", report.Extras[0].Name)
-	s.Empty(report.Extras[0].Descriptor)
-	// Neither basename nor a descriptor in an old source adopts unrelated apps.
-	retained := report.Infrastructure[0]
-	s.Equal("chezmoi", retained.Descriptor)
-	missing, packages, _, err := installationPlan(report, manifest.Resolved{}, "")
-	s.Require().NoError(err)
-	s.Empty(missing)
-	s.Equal([]manifest.Package{{Attr: "chezmoi"}}, packages)
-	// Only explicit application scope makes infrastructure an update target.
-	s.Empty(updateSelection(report, manifest.Resolved{}).Packages)
-	pkg := manifest.Package{Attr: "chezmoi"}
-	desired := manifest.Resolved{
-		Packages:     []manifest.Package{pkg},
-		Applications: []manifest.Application{{ID: "shared", Packages: []manifest.Package{pkg}}},
-	}
-	report = classify(Report{Entries: report.Entries}, desired)
-	selected := updateSelection(report, desired)
-	s.Equal(desired.Packages, selected.Packages)
-	names, err := updateTargets(report, selected, first.Source)
-	s.Require().NoError(err)
-	s.Equal([]string{retained.Name}, names)
-	// Recovering the source must not be necessary merely to reuse its backend.
-	reused, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	s.Equal(first.Executable, reused.Executable)
-	s.Empty(reused.Effects)
-	role, err := readInfrastructure(state)
-	s.Require().NoError(err)
-	s.Equal(first.Source, role.Source)
-}
-
-func (s *BootstrapSuite) TestRoleStateRejectsCorruptionAndUnsafeFiles() {
-	for _, scenario := range []string{"corrupt", "foreign-descriptor", "foreign-source", "public", "symlink"} {
-		s.Run(scenario, func() {
-			base := s.T().TempDir()
-			role := infrastructureState{
-				Descriptor: infrastructureDescriptor, Source: filepath.Join(base, "dotm", "source"),
-			}
-			s.Require().NoError(writeInfrastructure(base, role))
-			path := filepath.Join(base, "dotm", "infrastructure.json")
-			switch scenario {
-			case "corrupt":
-				s.Require().NoError(os.WriteFile(path, []byte("not-json"), 0o600))
-			case "foreign-descriptor":
-				role.Descriptor = "other"
-				data, err := json.Marshal(role)
-				s.Require().NoError(err)
-				s.Require().NoError(os.WriteFile(path, data, 0o600))
-			case "foreign-source":
-				role.Source = filepath.Join(base, "foreign")
-				data, err := json.Marshal(role)
-				s.Require().NoError(err)
-				s.Require().NoError(os.WriteFile(path, data, 0o600))
-			case "public":
-				s.Require().NoError(os.Chmod(path, 0o644))
-			case "symlink":
-				s.Require().NoError(os.Rename(path, path+".old"))
-				s.Require().NoError(os.Symlink(path+".old", path))
-			}
-			_, err := readInfrastructure(base)
-			s.Require().Error(err)
-		})
-	}
-}
-
-func (s *BootstrapSuite) TestRecordingExistingCanonicalBackendDoesNotReportPackageMutation() {
-	state, _, _ := s.fixture()
-	ctx := context.Background()
-	first, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	s.Require().NoError(os.Remove(filepath.Join(state, "dotm", "infrastructure.json")))
-	mutations := mustRead(s.T(), filepath.Join(state, "mutations"))
-	reused, err := BootstrapChezmoi(ctx, io.Discard)
-	s.Require().NoError(err)
-	s.Equal(first.Executable, reused.Executable)
-	s.Equal(mutations, mustRead(s.T(), filepath.Join(state, "mutations")))
-	s.Equal([]BootstrapEffect{{
-		Resource: "state", Path: filepath.Join(state, "dotm", "infrastructure.json"), Action: "created",
-	}}, reused.Effects)
+func (s *ChezmoiBootstrapSuite) TestPendingRecoveryIsRefusedBeforeBackendReuse() {
+	root := s.T().TempDir()
+	s.T().Setenv("XDG_STATE_HOME", root)
+	s.Require().NoError(os.MkdirAll(filepath.Join(root, "dotm"), 0o700))
+	journal := filepath.Join(root, "dotm", "update-recovery.json")
+	s.Require().NoError(os.WriteFile(journal, []byte("pending"), 0o600))
+	_, err := BootstrapChezmoi(context.Background(), manifest.Resolved{}, io.Discard)
+	s.Require().ErrorContains(err, "pending")
+	s.Equal("pending", mustRead(s.T(), journal))
 }

@@ -147,7 +147,7 @@ func (s *InstalledSuite) TestAllOutputsDoNotBlockUnrelatedManagedPlanning() {
 	s.Equal([]Entry{entries[0]}, units[0].entries)
 }
 
-func (s *InstalledSuite) TestUnknownEntriesAndRetainedDescriptors() {
+func (s *InstalledSuite) TestUnknownEntriesRemainExtras() {
 	entries, err := parseEntries(s.nativeJSON(map[string]any{
 		"store-only": map[string]any{"active": true, "storePaths": []string{"/nix/store/unknown"}},
 		"foreign":    sourceEntry("packages.x86_64-linux.tool", "github:someone/tool/rev", nil),

@@ -2,7 +2,7 @@
 
 ## Supported environment
 
-Selections with config targets require per-selection `backend = "chezmoi"` and real `repository` settings. Git must be available; `dotm init` can reuse compatible chezmoi or acquire the missing infrastructure backend. The command does not install selected applications, run their hooks, or apply destinations. dotm uses the shared source `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination, not an isolated private environment. chezmoi v2.74.1 is an exercised baseline, not an established minimum.
+Selections with config targets require per-selection `backend = "chezmoi"` and real `repository` settings. Git must be available. `dotm init` reuses compatible chezmoi or adds/selects the ordinary catalog application and installs only it and dependencies, with package pre-hooks but no configuration hooks or destination application. Existing custom declarations remain; incompatible existing executables fail instead of being silently shadowed. dotm uses the shared source `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state and effective destination, not a private environment. chezmoi v2.74.1 is an exercised baseline, not a proven minimum.
 
 Only normal `mode = "file"` is supported. Targets must map inside effective `destDir`. Catalog expansion of `$XDG_CONFIG_HOME` does not remap chezmoi `dot_config`; use a source layout/static settings compatible with actual custom XDG paths. Never broaden destination to `/` as a workaround.
 

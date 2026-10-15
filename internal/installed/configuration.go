@@ -164,7 +164,17 @@ func configure(
 	var globalErr error
 	if needsSource {
 		var sourceErr error
-		result.Source, sourceErr = chezmoi.SyncSource(ctx, options.Source.Repository, options.ConfirmReplacement)
+		backend, backendErr := resolveOperationalChezmoi(ctx)
+		if backendErr != nil {
+			sourceErr = backendErr
+		} else if backend == "" {
+			sourceErr = errors.New("chezmoi executable unavailable; run dotm init")
+		} else {
+			ctx = chezmoi.WithExecutable(ctx, backend)
+		}
+		if sourceErr == nil {
+			result.Source, sourceErr = chezmoi.SyncSource(ctx, options.Source.Repository, options.ConfirmReplacement)
+		}
 		if sourceErr == nil && result.Source.Cancelled {
 			sourceErr = errors.New("configuration source replacement was not approved")
 		}

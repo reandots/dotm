@@ -20,13 +20,11 @@ import (
 )
 
 type Report struct {
-	Profile            string
-	Applications       []ApplicationStatus
-	Entries            []Entry
-	Extras             []Entry
-	Infrastructure     []Entry
-	Configuration      ConfigurationResult
-	retainedDescriptor string
+	Profile       string
+	Applications  []ApplicationStatus
+	Entries       []Entry
+	Extras        []Entry
+	Configuration ConfigurationResult
 }
 
 type ApplicationStatus struct {
@@ -44,16 +42,15 @@ type PackageStatus struct {
 }
 
 type Entry struct {
-	Name           string
-	Active         bool
-	AttrPath       string
-	OriginalURL    string
-	URL            string
-	Outputs        []string
-	StorePaths     []string
-	Descriptor     string
-	Updateable     bool
-	Infrastructure bool
+	Name        string
+	Active      bool
+	AttrPath    string
+	OriginalURL string
+	URL         string
+	Outputs     []string
+	StorePaths  []string
+	Descriptor  string
+	Updateable  bool
 }
 
 func stateHome() (string, error) {
@@ -115,20 +112,14 @@ func Inspect(ctx context.Context, desired manifest.Resolved) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	infrastructure, err := readInfrastructure(base)
-	if err != nil {
-		return Report{}, err
-	}
 	profile := filepath.Join(base, "nix", "profile")
 	exists, err := profileExists(profile)
 	if err != nil {
 		return Report{}, fmt.Errorf("inspect profile %s: %w", profile, err)
 	}
 	if !exists {
-		return classify(Report{Profile: profile, retainedDescriptor: infrastructure.Descriptor}, desired), nil
+		return classify(Report{Profile: profile}, desired), nil
 	}
-	// Nix 2.35.6 reports an existing non-profile file as an empty profile.
-	// Require the native manifest before trusting that empty result.
 	info, err := os.Stat(filepath.Join(profile, "manifest.json"))
 	if err != nil {
 		return Report{}, fmt.Errorf("inspect profile %s: native JSON manifest unavailable: %w", profile, err)
@@ -141,12 +132,8 @@ func Inspect(ctx context.Context, desired manifest.Resolved) (Report, error) {
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return Report{}, fmt.Errorf(
-				"nix profile list --profile %s --json: %w: %s",
-				profile,
-				err,
-				strings.TrimSpace(string(exit.Stderr)),
-			)
+			return Report{}, fmt.Errorf("nix profile list --profile %s --json: %w: %s",
+				profile, err, strings.TrimSpace(string(exit.Stderr)))
 		}
 		return Report{}, fmt.Errorf("nix profile list --profile %s --json: %w", profile, err)
 	}
@@ -166,20 +153,7 @@ func Inspect(ctx context.Context, desired manifest.Resolved) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	canonicalAttr := "packages." + system + "." + managedAttribute(manifest.Package{Attr: infrastructureDescriptor})
-	for i := range entries {
-		entry := &entries[i]
-		// A retained role is independent of current-source health/rotation, but
-		// must never make other descriptors from that old source managed again.
-		if infrastructure.Source != "" && entry.AttrPath == canonicalAttr &&
-			identify(*entry, system, infrastructure.Source) == infrastructureDescriptor {
-			entry.Descriptor = infrastructureDescriptor
-			entry.Infrastructure = true
-		}
-	}
-	return classify(Report{
-		Profile: profile, Entries: entries, retainedDescriptor: infrastructure.Descriptor,
-	}, desired), nil
+	return classify(Report{Profile: profile, Entries: entries}, desired), nil
 }
 
 func parseEntries(data []byte, system, source string) ([]Entry, error) {
@@ -395,10 +369,6 @@ func classify(r Report, desired manifest.Resolved) Report {
 		as.Ready = len(as.BlockedBy) == 0
 	}
 	for _, e := range r.Entries {
-		if e.Infrastructure {
-			r.Infrastructure = append(r.Infrastructure, e)
-			continue
-		}
 		if !e.Active || e.Descriptor == "" || !wanted[e.Descriptor] {
 			r.Extras = append(r.Extras, e)
 		}

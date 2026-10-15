@@ -4,7 +4,7 @@
 
 ## Ownership and prerequisites
 
-The selected configuration's `[configurations.configs]` names `backend = "chezmoi"` and the Git `repository`. dotm uses one shared checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination. There is no second private chezmoi environment. Git must be available; `dotm init` can reuse compatible chezmoi or acquire missing chezmoi infrastructure. chezmoi v2.74.1 is the exercised baseline, not a proven minimum.
+The selected configuration's `[configurations.configs]` names `backend = "chezmoi"` and the Git `repository`. dotm uses one shared checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination. There is no second private environment. Git must be available; `dotm init` reuses compatible chezmoi or declares/selects and installs the ordinary `chezmoi` application and dependencies. It applies no destination files or configuration hooks. chezmoi v2.74.1 is the exercised baseline, not a proven minimum.
 
 Only normal `mode = "file"` is supported. Declared paths must map inside effective `destDir`. Expanding `$XDG_CONFIG_HOME` in a declaration does **not** relocate source `dot_config`: it still maps according to chezmoi's layout. Do not solve this by broadening the destination to `/`; provide a compatible source layout/settings.
 

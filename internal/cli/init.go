@@ -50,15 +50,52 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 		return err
 	}
 	stage = "chezmoi backend"
-	backend, err := installed.BootstrapChezmoi(ctx, stderr)
+	executable, err := installed.FindChezmoi(ctx)
+	if err != nil {
+		return err
+	}
+	var backend installed.BootstrapResult
+	if executable == "" {
+		stage = "chezmoi application selection"
+		applicationPlan, planErr := initprep.PlanChezmoi(ctx, dataDir, plan.Configuration)
+		if planErr != nil {
+			return planErr
+		}
+		applicationFiles, applyErr := applicationPlan.Apply(ctx, nil)
+		for _, effect := range applicationFiles.Completed {
+			fmt.Fprintf(out, "Dotm file changed: %s\n", effect.Path)
+		}
+		if applyErr != nil {
+			return applyErr
+		}
+		selectionPath, selectionErr := manifest.SelectionPath()
+		if selectionErr != nil {
+			return selectionErr
+		}
+		sharedDir := dataDir
+		if sharedDir == "" {
+			sharedDir = filepath.Join(filepath.Dir(selectionPath), "data")
+		}
+		data, loadErr := manifest.Load(sharedDir)
+		if loadErr != nil {
+			return loadErr
+		}
+		desired, resolveErr := data.Resolve([]string{"chezmoi"})
+		if resolveErr != nil {
+			return resolveErr
+		}
+		stage = "chezmoi application installation"
+		backend, err = installed.BootstrapChezmoi(ctx, desired, stderr)
+		executable = backend.Executable
+	}
 	for _, effect := range backend.Effects {
 		fmt.Fprintf(out, "Backend %s %s: %s\n", effect.Resource, effect.Action, effect.Path)
 	}
 	if err != nil {
 		return err
 	}
-	ctx = chezmoi.WithExecutable(ctx, backend.Executable)
-	fmt.Fprintf(out, "Chezmoi executable: %s\n", backend.Executable)
+	ctx = chezmoi.WithExecutable(ctx, executable)
+	fmt.Fprintf(out, "Chezmoi executable: %s\n", executable)
 	stage = "source acquisition"
 	source, err := chezmoi.SetupSource(ctx, plan.Repository, confirmReplacement(in, out))
 	if source.Changed {
@@ -119,7 +156,8 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	if err = chezmoi.VerifyDiscovery(ctx, source.Path, refreshed.Policy); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "Init complete; no user applications, hooks, or destination configurations were applied.")
+	fmt.Fprintln(out, "Init complete; only missing chezmoi and its dependencies may have been installed; "+
+		"no configuration hooks or destination configurations were applied.")
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 
 	"dotm/internal/chezmoi"
 	"dotm/internal/manifest"
@@ -24,17 +25,62 @@ type BootstrapEffect struct {
 
 type BootstrapResult struct {
 	Executable string
-	Source     string
-	Retained   bool
-	Report     Report
 	Effects    []BootstrapEffect
 }
 
-// BootstrapChezmoi obtains only the infrastructure backend, never applications
-// or their hooks/configurations. Inputs must already be validated by the caller.
-// Hold the caller's mutation context through subsequent setup stages and route
-// every chezmoi call with chezmoi.WithExecutable(ctx, result.Executable).
-func BootstrapChezmoi(ctx context.Context, stderr io.Writer) (result BootstrapResult, resultErr error) {
+// FindChezmoi discovers and compatibility-checks a reusable chezmoi executable.
+func FindChezmoi(ctx context.Context) (string, error) {
+	candidate, err := pathChezmoi()
+	if err != nil {
+		return "", err
+	}
+	if candidate == "" {
+		candidate, err = profileChezmoi()
+	}
+	if err != nil || candidate == "" {
+		return candidate, err
+	}
+	if err := chezmoi.ProbeExecutable(ctx, candidate); err != nil {
+		return "", err
+	}
+	return candidate, nil
+}
+
+func profileChezmoi() (string, error) {
+	base, err := stateHome()
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(base, "nix", "profile", "bin", "chezmoi")
+	if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", fmt.Errorf("inspect profile chezmoi: %w", err)
+	}
+	return usableChezmoi(candidate)
+}
+
+func resolveOperationalChezmoi(ctx context.Context) (string, error) {
+	candidate, err := profileChezmoi()
+	if err != nil {
+		return "", err
+	}
+	if candidate == "" {
+		candidate, err = pathChezmoi()
+	}
+	if err != nil || candidate == "" {
+		return candidate, err
+	}
+	if err := chezmoi.ProbeExecutable(ctx, candidate); err != nil {
+		return "", err
+	}
+	return candidate, nil
+}
+
+// BootstrapChezmoi installs only the caller-resolved chezmoi application closure.
+func BootstrapChezmoi(
+	ctx context.Context, desired manifest.Resolved, stderr io.Writer,
+) (result BootstrapResult, resultErr error) {
 	if err := CheckPendingRecovery(); err != nil {
 		return result, err
 	}
@@ -46,6 +92,14 @@ func BootstrapChezmoi(ctx context.Context, stderr io.Writer) (result BootstrapRe
 	if pendingErr := CheckPendingRecovery(); pendingErr != nil {
 		return result, pendingErr
 	}
+	candidate, err := FindChezmoi(ctx)
+	if err != nil {
+		return result, err
+	}
+	if candidate != "" {
+		result.Executable = candidate
+		return result, nil
+	}
 	if _, gitErr := exec.LookPath("git"); gitErr != nil {
 		return result, fmt.Errorf("git is required for checkout acquisition; install Git before setup: %w", gitErr)
 	}
@@ -53,183 +107,72 @@ func BootstrapChezmoi(ctx context.Context, stderr io.Writer) (result BootstrapRe
 	if err != nil {
 		return result, err
 	}
-	role, err := readInfrastructure(base)
-	if err != nil {
-		return result, err
+	profile := filepath.Join(base, "nix", "profile", "manifest.json")
+	pointer := filepath.Join(base, "dotm", sourcePointerName)
+	watched := map[string][]byte{profile: nil, pointer: nil}
+	for path := range watched {
+		watched[path], _ = os.ReadFile(path)
 	}
-	before, err := Inspect(ctx, manifest.Resolved{})
-	if err != nil {
-		return result, err
-	}
-	result.Report = before
-	// Compare resource bytes, not classification flags: recording a role for
-	// an already installed descriptor does not itself change the native profile.
-	watched := make(map[string][]byte)
-	watch := func(path string) {
-		if _, exists := watched[path]; !exists {
+	if state, stateErr := readSourceState(base); stateErr == nil && state.Healthy {
+		for _, name := range []string{"flake.nix", "flake.lock"} {
+			path := filepath.Join(state.Path, name)
 			watched[path], _ = os.ReadFile(path)
 		}
 	}
-	watch(filepath.Join(base, "dotm", "infrastructure.json"))
-	watch(filepath.Join(base, "dotm", sourcePointerName))
-	profileManifest := filepath.Join(before.Profile, "manifest.json")
-	watch(profileManifest)
-	defer func() {
-		// Stable order keeps partial reports deterministic.
-		paths := []string{
-			profileManifest,
-			filepath.Join(base, "dotm", sourcePointerName),
-			filepath.Join(result.Source, "flake.nix"), filepath.Join(result.Source, "flake.lock"),
-			filepath.Join(base, "dotm", "infrastructure.json"),
-		}
-		for _, path := range paths {
-			previous, ok := watched[path]
-			if !ok {
-				continue
+	sourceDir := filepath.Join(base, "dotm", "sources")
+	knownSources := make(map[string]bool)
+	if dirs, readErr := os.ReadDir(sourceDir); readErr == nil {
+		for _, dir := range dirs {
+			if dir.IsDir() {
+				knownSources[filepath.Join(sourceDir, dir.Name())] = true
 			}
-			current, readErr := os.ReadFile(path)
+		}
+	}
+	defer func() {
+		if dirs, readErr := os.ReadDir(sourceDir); readErr == nil {
+			for _, dir := range dirs {
+				path := filepath.Join(sourceDir, dir.Name())
+				if !dir.IsDir() || knownSources[path] {
+					continue
+				}
+				for _, name := range []string{"flake.nix", "flake.lock"} {
+					watched[filepath.Join(path, name)] = nil
+				}
+			}
+		}
+		paths := make([]string, 0, len(watched))
+		for path := range watched {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			after, readErr := os.ReadFile(path)
 			if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 				resultErr = errors.Join(resultErr, fmt.Errorf("inspect bootstrap effect %s: %w", path, readErr))
 				continue
 			}
-			if bytes.Equal(previous, current) {
+			if bytes.Equal(watched[path], after) {
 				continue
 			}
-			action := "changed"
-			if previous == nil {
+			action, resource := "changed", "state"
+			if watched[path] == nil {
 				action = "created"
 			}
-			resource := "state"
-			if path == profileManifest {
+			if path == profile {
 				resource = "profile"
 			}
-			result.Effects = append(result.Effects, BootstrapEffect{resource, path, action})
+			result.Effects = append(result.Effects, BootstrapEffect{Resource: resource, Path: path, Action: action})
 		}
 	}()
-
-	if role.Descriptor != "" && len(before.Infrastructure) != 0 {
-		result.Source = role.Source
-		return finishBootstrap(ctx, base, role, before.Infrastructure, result)
+	if _, installErr := installPackages(ctx, desired, stderr); installErr != nil {
+		return result, installErr
 	}
-	if role.Descriptor == "" {
-		candidate, candidateErr := pathChezmoi()
-		if candidateErr != nil {
-			return result, candidateErr
-		}
-		if candidate != "" {
-			result.Executable = candidate
-			return result, chezmoi.ProbeExecutable(ctx, candidate)
-		}
-	}
-
-	state, err := readSourceState(base)
+	result.Executable, err = resolveOperationalChezmoi(ctx)
 	if err != nil {
 		return result, err
 	}
-	source := state.Path
-	if !state.Healthy {
-		source = ""
-	}
-	pkg := manifest.Package{Attr: infrastructureDescriptor}
-	missing, retained, allowInit, err := installationPlan(
-		before, manifest.Resolved{Packages: []manifest.Package{pkg}}, source,
-	)
-	if err != nil {
-		return result, err
-	}
-	system, err := nixSystem()
-	if err != nil {
-		return result, err
-	}
-	active := 0
-	for _, entry := range before.Entries {
-		if entry.Active && entry.Descriptor == infrastructureDescriptor {
-			active++
-			if entry.AttrPath != "packages."+system+"."+managedAttribute(pkg) ||
-				entry.OriginalURL != "path:"+source {
-				return result, fmt.Errorf("existing chezmoi descriptor is not from the canonical generated source; " +
-					"repair its profile/session exposure before setup")
-			}
-		}
-	}
-	if active > 1 {
-		return result, fmt.Errorf("multiple active chezmoi descriptors; repair the profile before setup")
-	}
-	if state.Healthy {
-		result.Source = source
-		watch(filepath.Join(source, "flake.nix"))
-		watch(filepath.Join(source, "flake.lock"))
-		if prepareErr := prepareSource(ctx, source, system, retained, allowInit, stderr); prepareErr != nil {
-			return result, prepareErr
-		}
-	} else {
-		// freshSource returns its allocated path even if initialization fails.
-		source, err = freshSource(ctx, base, system, retained, stderr)
-		result.Source = source
-		if source != "" {
-			watched[filepath.Join(source, "flake.nix")] = nil
-			watched[filepath.Join(source, "flake.lock")] = nil
-		}
-		if err != nil {
-			return result, err
-		}
-	}
-	role = infrastructureState{Descriptor: infrastructureDescriptor, Source: source, Pending: true}
-	// Publish intent before add. Canonical profile evidence reconciles an add
-	// that completed before role finalization (including a killed parent).
-	if err := writeInfrastructure(base, role); err != nil {
-		return result, err
-	}
-	addErr := addPackages(ctx, before.Profile, source, system, missing, stderr)
-	after, inspectErr := Inspect(context.WithoutCancel(ctx), manifest.Resolved{})
-	if inspectErr != nil {
-		result.Report = Report{}
-		return result, errors.Join(addErr, inspectErr)
-	}
-	result.Report = after
-	if addErr != nil {
-		return result, addErr
-	}
-	return finishBootstrap(ctx, base, role, after.Infrastructure, result)
-}
-
-func finishBootstrap(
-	ctx context.Context, base string, role infrastructureState, entries []Entry, result BootstrapResult,
-) (BootstrapResult, error) {
-	if len(entries) != 1 || !entries[0].Active {
-		return result, fmt.Errorf("retained chezmoi descriptor needs exactly one active native entry; " +
-			"repair the standard Nix profile and retry setup")
-	}
-	var executable string
-	for _, store := range entries[0].StorePaths {
-		candidate := filepath.Join(store, "bin", "chezmoi")
-		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return result, fmt.Errorf("inspect retained chezmoi: %w", err)
-		}
-		resolved, err := usableChezmoi(candidate)
-		if err != nil {
-			return result, err
-		}
-		if executable != "" && executable != resolved {
-			return result, fmt.Errorf("retained descriptor exposes multiple chezmoi executables; " +
-				"repair profile and retry")
-		}
-		executable = resolved
-	}
-	if executable == "" {
-		return result, fmt.Errorf("retained chezmoi entry has no executable; repair profile and retry setup")
-	}
-	result.Executable, result.Retained = executable, true
-	if err := chezmoi.ProbeExecutable(ctx, executable); err != nil {
-		return result, err
-	}
-	if role.Pending {
-		role.Pending = false
-		if err := writeInfrastructure(base, role); err != nil {
-			return result, fmt.Errorf("backend acquired; role finalization pending, retry setup to reconcile: %w", err)
-		}
+	if result.Executable == "" {
+		return result, fmt.Errorf("chezmoi installation completed but no executable was found")
 	}
 	return result, nil
 }

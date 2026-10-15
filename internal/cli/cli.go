@@ -28,7 +28,7 @@ type cli struct {
 	Apps         appsCmd         `cmd:"" help:"List catalog applications, dependencies, packages, configuration targets and hook paths"`
 	Show         showCmd         `cmd:"" help:"Show the local selection and resolved applications, packages and owned configuration targets"`
 	Status       statusCmd       `cmd:"" help:"Inspect the Nix profile and configuration readiness from current package requirements"`
-	Init         initCmd         `cmd:"" help:"Prepare dotm files, chezmoi checkout and file policy without installing applications or applying configurations"`
+	Init         initCmd         `cmd:"" help:"Prepare dotm files, acquire missing catalog-selected chezmoi and set up file policy without applying configurations"`
 	Doctor       doctorCmd       `cmd:"" help:"Diagnose dotm inputs, backends, host and current session without repairs"`
 	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
@@ -372,17 +372,6 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 				"    store paths: %s\n    update recipe: %s\n",
 			entry.Name, state, descriptor, entry.AttrPath, entry.OriginalURL, entry.URL,
 			outputs, list(entry.StorePaths), update)
-	}
-	fmt.Fprintln(out, "Infrastructure:")
-	if len(report.Infrastructure) == 0 {
-		fmt.Fprintln(out, "  (none)")
-	}
-	for _, entry := range report.Infrastructure {
-		state := "inactive"
-		if entry.Active {
-			state = "active"
-		}
-		fmt.Fprintf(out, "  %s [%s; %s]\n", entry.Name, state, entry.Descriptor)
 	}
 	fmt.Fprintln(out, "Extras:")
 	if len(report.Extras) == 0 {
