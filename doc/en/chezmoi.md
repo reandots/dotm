@@ -22,6 +22,17 @@ If you previously configured `data.dotm.policyFile`, that key is now unused and 
 
 With a valid policy, standalone chezmoi uses the **last published selection**, not the current dotm selection automatically. Changes to selection/declarations/source/settings can make policy stale: refresh it. Ordinary add/edit on excluded paths may fail or ignore input; exclusions are not a universal sandbox or an allowlist preventing addition of unrelated files.
 
+### Upgrade an existing installation
+
+Run `dotm init` deliberately against the existing manifests and matching repository; it does not fetch that checkout. Init recognizes the exact supported legacy inclusion and upgrades it to the owned portable root block, preserving native rules, compatible settings, and unrelated source edits. A modified or ambiguous block needs explicit correction, not a forced refresh.
+
+Review the reported source diff with `git -C /actual/chezmoi/source diff -- .chezmoiignore` (use the effective root when `.chezmoiroot` is present). Review unrelated changes separately and commit/publish the integration yourself before ordinary lifecycle synchronization, which requires a clean, published source. Init does not commit or discard those changes.
+
+The old `data.dotm.policyFile` key is unnecessary; the generated policy now uses the fixed XDG state path above. Neither the unused key nor old generated files are silently deleted. Do not copy an old policy into the new location: regenerate it with init or `files refresh`.
+
+After adoption, run `dotm doctor`, `dotm cfg lint`, `dotm files lint`, and `dotm files status`. Doctor is read-only; status publishes local policy but does not apply destinations. Ordinary refresh/install/update/update cfg never upgrade the root integration or rewrite static settings. A new selection needs policy refresh; standalone chezmoi otherwise retains the last published selection.
+
+
 ## Acquisition and source switches
 
 Install/update/update cfg acquire or fast-forward the source before applying eligible targets. A missing source is staged and validated before activation. Existing sources require a clean standalone nonempty Git checkout, a branch with one origin upstream, and safe source layout. Dirty tracked/index/untracked/ignored content, including empty untracked directories, blocks synchronization. Detached, ahead/diverged, shallow, linked/shared/sparse/submodule checkouts and hidden-index state are rejected. No automatic stash, reset, clean, rebase, or source repair occurs.

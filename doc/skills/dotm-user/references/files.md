@@ -45,6 +45,9 @@ The fixed state path is outside Git. If `XDG_STATE_HOME` is unset or empty, `HOM
 
 If `data.dotm.policyFile` was configured previously, it is unused now and can be removed manually; dotm does not edit user configuration. Old generated policy files are retained, not discovered as a fallback. Do not delete old/user-owned files without review.
 
+For an existing installation, deliberately rerun init with the existing manifests and matching repository. It recognizes exact supported legacy inclusions and upgrades the owned effective-root integration without fetching, preserving native rules, compatible settings, and unrelated dirty edits. Modified/ambiguous blocks require explicit correction. Review the reported `.chezmoiignore` diff at the effective root and publish authorized source changes yourself before ordinary lifecycle synchronization, which requires a clean published checkout. Never discard unrelated edits to satisfy that gate. Init/refresh regenerate the fixed-path policy; do not copy a legacy generated file. Ordinary refresh/lifecycle do not migrate integration/settings; doctor only diagnoses. Follow adoption with doctor, both linters, and files status; status publishes policy but does not deploy files.
+
+
 With valid policy, standalone chezmoi follows the **last published** selection, not a new local selection automatically. Refresh after changes to selection/declarations/source/settings. Exclusions are literal roots/subtrees including future descendants, not a universal sandbox/allowlist against adding unrelated files. Ordinary chezmoi add/edit on excluded paths may ignore/reject input.
 
 ## Which exclusions mean what

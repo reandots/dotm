@@ -61,6 +61,6 @@ It is **not runnable**: `.invalid` repository URLs are fictional; hook implement
 Historical isolated real-backend scenarios and their environment/protection boundaries are recorded separately:
 
 - [Package acceptance](../../.agent/acceptance.md): Arch and disposable Ubuntu, ordinary multi-user-daemon user, rollback and explicit GC.
-- [Configuration/files acceptance](../../.agent/configuration-acceptance.md): isolated HOME/XDG state, Git/chezmoi and Arch Nix lifecycle composition.
+- [Configuration/files acceptance](../../.agent/configuration-acceptance.md): historical lifecycle checks plus [composed init/doctor acceptance](../../.agent/configuration-acceptance.md#composed-init-and-doctor-acceptance) with isolated HOME/custom XDG/data roots, real chezmoi bootstrap, legacy migration, lifecycle, and partial-failure diagnosis on Arch.
 
 These are maintainer verification records, not commands to replay against your live profile. See [coverage limits](troubleshooting.md).

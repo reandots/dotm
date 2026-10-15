@@ -12,7 +12,7 @@ Use this skill to change the user's environment through dotm's supported inputs 
 - Before editing any TOML, read [Manifests](references/manifests.md): locations, required versus optional settings, package descriptors, dependencies, paths, ownership, and hooks.
 - To add an application, select a profile, or prepare a first deployment, read [Workflows](references/workflows.md); first setup uses `dotm init`.
 - Before running commands, read [CLI](references/cli.md): inspection versus mutation, initialization, update scope, removal, cleanup, combined flags, and verification.
-- For configuration targets, exclusions, chezmoi setup, or file inventory, read [Files](references/files.md). It includes the policy integration template.
+- For configuration targets, exclusions, chezmoi setup or upgrades, or file inventory, read [Files](references/files.md). It includes the policy integration template and existing-installation transition gates; ordinary refresh/lifecycle never migrate integration.
 - On failure, conflict, interruption, or recovery requests, read [Recovery](references/recovery.md). Use `dotm doctor` for broad read-only diagnosis, never `--fix`; effective checks execute trusted templates and cannot provision the host/session.
 
 ## Execution contract

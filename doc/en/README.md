@@ -14,7 +14,7 @@ An **application** is a logical catalog entry: it may contain several packages, 
 2. [Demo and examples](examples.md): inspect the example catalog without touching a profile.
 3. [Configuration reference](configuration.md): write shared TOML manifests, local selection, exclusions, and hooks.
 4. [Usage](usage.md): inspect, install, update, switch configurations, remove extras, and clean history.
-5. [chezmoi and files](chezmoi.md): adopt filtering integration, synchronize safely, inspect file changes.
+5. [chezmoi and files](chezmoi.md): adopt filtering integration, [upgrade an existing installation](chezmoi.md#upgrade-an-existing-installation), synchronize safely, inspect file changes.
 6. [Troubleshooting](troubleshooting.md): read-only `doctor`, exit codes, conflicts, recovery, and coverage limits.
 7. [Development](development.md): pinned tools, package structure, conventions, and checks.
 

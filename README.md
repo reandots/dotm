@@ -29,6 +29,9 @@ For pinned developer tools, use `just setup`; this trusts the checkout's mise co
 
 Before deploying, follow [installation and host preparation](doc/en/installation.md), create your [manifests and local selection](doc/en/configuration.md), then review `show` and `status`. `install` and `update` can run trusted hooks and modify application files, not just packages.
 
+For an existing installation, follow the [integration transition guide](doc/en/chezmoi.md#upgrade-an-existing-installation): explicitly adopt the root block with `init`, review/publish the source diff, then diagnose before deployment. Ordinary lifecycle/refresh does not migrate integration; doctor does not repair it.
+
+
 ## Documentation
 
 | Topic | English | Русский |
