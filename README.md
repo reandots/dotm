@@ -10,6 +10,7 @@ Deploy personal Linux application environments with **Nix** and synchronize appl
 - Installs missing packages, explicitly updates installed desired applications, and removes extras only with approval.
 - Applies eligible application configurations without forcing overwrites of local conflicts.
 - Runs repeatable application hooks and checks file filtering and unclassified HOME/XDG paths.
+- Diagnoses dotm inputs, backend/host prerequisites, and current-session paths with read-only `doctor`.
 - Separates profile-history cleanup from explicitly requested shared-store garbage collection.
 
 dotm is a personal Linux CLI, not a system provisioner. It requires a configured multi-user Nix daemon; configuration deployment additionally requires Git. `dotm init` prepares the chezmoi backend, source, and policy integration, acquiring only missing chezmoi infrastructure. It does not install dotm itself or Nix/Git, change the login shell, configure a desktop session, or enable system services.

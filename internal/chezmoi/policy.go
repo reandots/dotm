@@ -375,6 +375,12 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 // CheckPolicy checks native effective rules before publication and verifies the
 // persisted binding and normal integration when published is true.
 func CheckPolicy(ctx context.Context, source string, policy Policy, published bool) (manifest.FileModel, error) {
+	return checkPolicy(ctx, source, policy, published, true)
+}
+
+func checkPolicy(
+	ctx context.Context, source string, policy Policy, published, reportConsumptionFailure bool,
+) (manifest.FileModel, error) {
 	result := manifest.FileModel{}
 	candidate, err := CompilePolicy(ctx, source, policy.Input)
 	if err != nil {
@@ -442,7 +448,7 @@ func CheckPolicy(ctx context.Context, source string, policy Policy, published bo
 	if probeErr != nil {
 		return result, probeErr
 	}
-	if !consumed {
+	if !consumed && reportConsumptionFailure {
 		path, pathErr := PolicyPath(candidate)
 		if pathErr != nil {
 			return result, pathErr
@@ -604,7 +610,7 @@ func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy P
 	for _, contextName := range contexts {
 		override, marshalErr := json.Marshal(map[string]any{
 			"chezmoi": map[string]any{"command": contextName},
-			"dotm":    map[string]any{"policyCandidate": path, "nativeOnly": false},
+			"dotm":    map[string]any{"policyCandidate": path},
 		})
 		if marshalErr != nil {
 			return false, nil, marshalErr
@@ -626,7 +632,7 @@ func verifyPolicyConsumption(ctx context.Context, command applyCommand, policy P
 		}
 	}
 	override, err := json.Marshal(map[string]any{
-		"dotm": map[string]any{"policyCandidate": path, "nativeOnly": false},
+		"dotm": map[string]any{"policyCandidate": path},
 	})
 	if err != nil {
 		return false, nil, err

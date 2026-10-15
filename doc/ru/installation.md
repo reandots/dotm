@@ -83,6 +83,7 @@ Init не устанавливает выбранные приложения, н
 ## Сначала просмотр, затем развёртывание
 
 ```sh
+./dotm doctor
 ./dotm configs
 ./dotm apps
 ./dotm show

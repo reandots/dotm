@@ -19,6 +19,8 @@ Diagnostics are emitted once: stdout carries warnings, status, and actual stage/
 
 For a missing, malformed, or stale regular policy file, `files refresh` can regenerate it. If the reported policy path is not a regular file, remove/rename it only after reviewing it, then refresh. For missing initial chezmoi/source/owned integration setup, use `dotm init` after reviewing its independent approvals and effects. Unsafe, ambiguous, damaged, or user-modified integrations and incompatible settings require the specific correction reported; do not replace them by guesswork. Correct declaration errors in the named TOML input. There is no `doctor --fix` repair path.
 
+Start broad read-only diagnosis with `dotm doctor` (use the actual `--data-dir` when nondefault). It preserves independent findings even when manifests or a backend fail and explicitly labels dependency-blocked checks. It uses exit 0/1/3 with maximum severity; a missing backend is not a successful policy check. Current-process PATH/XDG findings do not prove fresh-login or desktop integration. Effective policy checks execute trusted templates; there is no repair mode.
+
 ## Common diagnostics
 
 | Symptom | Action |

@@ -29,6 +29,7 @@ type cli struct {
 	Show         showCmd         `cmd:"" help:"Show the local selection and resolved applications, packages and owned configuration targets"`
 	Status       statusCmd       `cmd:"" help:"Inspect the Nix profile and configuration readiness from current package requirements"`
 	Init         initCmd         `cmd:"" help:"Prepare dotm files, chezmoi checkout and file policy without installing applications or applying configurations"`
+	Doctor       doctorCmd       `cmd:"" help:"Diagnose dotm inputs, backends, host and current session without repairs"`
 	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
@@ -42,6 +43,7 @@ type (
 	appsCmd    struct{}
 	showCmd    struct{}
 	statusCmd  struct{}
+	doctorCmd  struct{}
 	installCmd struct{}
 	updateCmd  struct {
 		Run struct{} `cmd:"" default:"1" hidden:""`
@@ -148,6 +150,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 	}
 	if command == "init" {
 		return runInit(app.Init, app.DataDir, in, out, stderr)
+	}
+	if command == "doctor" {
+		return runDoctor(app.DataDir, out)
 	}
 	if app.DataDir == "" {
 		selectionPath, pathErr := manifest.SelectionPath()

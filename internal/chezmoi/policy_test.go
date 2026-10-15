@@ -117,6 +117,43 @@ func (s *policySuite) publish(input PolicyInput) Policy {
 	return policy
 }
 
+func (s *policySuite) TestDiagnosePolicyChecksOwnedRootAndMissingPublication() {
+	policyPath := s.integrate()
+	input := s.input("default")
+	result, err := DiagnosePolicy(context.Background(), s.source, input, true)
+	s.Require().NoError(err)
+	var messages []string
+	for _, diagnostic := range result.Diagnostics {
+		messages = append(messages, diagnostic.Message)
+	}
+	s.Contains(strings.Join(messages, "\n"), "published files policy is missing")
+	s.NoFileExists(policyPath)
+
+	s.Require().NoError(os.Remove(filepath.Join(s.source, ".chezmoiignore")))
+	integration, err := InspectIntegration(s.source)
+	s.Require().NoError(err)
+	s.Require().Len(integration.Diagnostics, 1)
+	s.Contains(integration.Diagnostics[0].Message, "owned policy integration is missing")
+	result, err = DiagnosePolicy(context.Background(), s.source, input, false)
+	s.Require().NoError(err)
+	for _, diagnostic := range result.Diagnostics {
+		s.NotContains(diagnostic.Message, "root ignore template does not consume external policy")
+	}
+}
+
+func (s *policySuite) TestDiagnosePolicyReportsDisabledOwnedIntegration() {
+	s.integrate()
+	s.write(s.config, "sourceDir = "+strconv.Quote(s.checkout)+"\ndestDir = "+strconv.Quote(s.home)+
+		"\n[data.dotm]\nnativeOnly = true\n")
+	result, err := DiagnosePolicy(context.Background(), s.source, s.input("default"), true)
+	s.Require().NoError(err)
+	var messages []string
+	for _, diagnostic := range result.Diagnostics {
+		messages = append(messages, diagnostic.Message)
+	}
+	s.Contains(strings.Join(messages, "\n"), "root ignore template does not consume external policy")
+}
+
 func (s *policySuite) TestLiteralExclusionsPreserveSiblingsAndNativeRules() {
 	s.integrate()
 	s.write(filepath.Join(s.source, "dot_config", "selected", ".chezmoiignore"), "*.db\n")

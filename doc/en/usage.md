@@ -21,6 +21,7 @@ Examples use the default data directory. Add `--data-dir /path/to/data` for anot
 | `files status` | Refresh policy locally and inventory managed changes/unclassified files; never fetch |
 | `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired and recorded infrastructure descriptors |
 | `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs, chezmoi backend/source, owned ignore integration, and initial policy; no application deployment |
+| `doctor` | Read-only dotm/source/policy, backend, host, and current-session diagnostics; no repairs |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | Separate history pruning and optional shared-store GC; no manifests/selection required |
 
 The files commands evaluate trusted templates but do not apply configurations, run application hooks, or inspect Nix. See [chezmoi and files](chezmoi.md).
@@ -32,6 +33,14 @@ The files commands evaluate trusted templates but do not apply configurations, r
 Supply `--configuration` and `--repository` when local inputs do not already provide an unambiguous choice. The global `--data-dir` selects shared manifests, not machine-local settings. Init validates local inputs and paths before writes and collects separate approvals for local-intent changes and source replacement. It has no `--yes` bypass: cancellation/EOF fails safely.
 
 The command prepares approved dotm files, backend, source checkout, compatible static chezmoi settings, root ignore integration, and initial published policy, then checks normal discovery. A matching checkout is checked locally without fetch/fast-forward; it does not overwrite unrelated dirty or native-rule content. Init never installs selected applications, runs hooks, applies destinations, auto-commits, or silently changes origin. Unsafe/damaged integration needs correction rather than automatic rewriting. Review reported created/changed files, package effects, retained replacement backups, and policy publication, then review and commit source changes yourself. Stages are not a cross-resource transaction: a later error may follow completed effects. Re-running successful setup makes no unnecessary changes.
+
+## Diagnose setup
+
+Run `./dotm doctor` after setup or when prerequisites fail; global `--data-dir` selects the shared manifests. It checks selection/declarations, passive source/settings safety, owned root integration, effective native rules and published policy binding/freshness, Git/chezmoi capabilities, Nix features/daemon/profile, and current PATH/XDG exposure. Independent checks continue after failures; dependency-blocked checks name the missing prerequisite and are not passes.
+
+Doctor never installs, fetches, recovers packages, changes persistent settings/source/policy/profile, runs application hooks, or applies destinations. There is no `--fix`. Effective checks evaluate trusted templates, which are not sandboxed; temporary probes are removed. Nix may create ancillary runtime/cache state during native inspection. A genuinely absent first-run profile is informational, not equivalent to a corrupt/dangling profile. Session checks describe the current process only, not a fresh login or graphical session.
+
+Failures appear once on stderr; warnings, results and blocked checks use stdout. Exit 0 means no failing findings, 1 means checked dotm/source/policy input failures, and 3 means host/execution/internal failures; the highest severity wins. Remedies distinguish `init` setup, `files refresh` regeneration, explicit input corrections, and external host/session preparation. Doctor does not install Nix or configure the session.
 
 ## Inspect and install
 

@@ -83,6 +83,7 @@ Init never installs selected applications, runs their hooks, applies destination
 ## Review, then deploy
 
 ```sh
+./dotm doctor
 ./dotm configs
 ./dotm apps
 ./dotm show

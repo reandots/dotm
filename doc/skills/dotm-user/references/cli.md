@@ -20,6 +20,7 @@ Assume `dotm` is already installed and available on PATH; invoke it directly as 
 | `remove-extras [--yes]` | Explicitly approved extra native package entries only |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | History pruning and explicitly optional shared-store GC; no manifests/local selection |
 | `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs and chezmoi/policy integration; never deploys selected applications |
+| `doctor` | Read-only inputs/source/policy, backend/host, and current-session diagnostics; no fixes |
 
 There is no generic install/update dry run, positional `install <app>`, force-conflict option, or implicit removal. `init` prepares an already installed dotm; it does not install dotm, Nix, or Git, and does not install selected applications, run hooks, or apply destinations. It has no `--yes` bypass. `show` and `status` inspect scope, not a guarantee of future backend success. Files commands require their file workflow and do not inspect Nix, apply files, or run application hooks. Only `cfg lint` is passive source lint; files checks may execute template helpers.
 
@@ -40,6 +41,8 @@ Readiness requires all packages in an application's dependency closure; package-
 - File deployment: authorized `update cfg` or full package operation; inspect stage outcomes/conflicts and `files status` afterward. An inventory finding or skipped missing-package application may still exit 0.
 
 If a prerequisite is missing, report exactly which verification could not run; never substitute parser success for semantic CLI verification.
+
+`doctor` checks manifests/selection/declarations, passive source/settings safety, owned integration/effective native rules and published binding/freshness, Git/chezmoi capability, Nix features/daemon/native profile, and current PATH/XDG paths. Independent findings continue; blocked checks name their missing dependencies and never count as passes. A genuinely absent first-run profile is informational; corrupt/dangling/inaccessible profiles fail. No install/fetch/recovery/hooks/apply or persistent dotm/source/policy/profile writes occur, and no `--fix` exists. Trusted templates can execute code; temporary policy/backend probes are cleaned up, while Nix may create ancillary runtime/cache state. Session findings describe this process, not fresh-login/GUI acceptance. Remedies belong to `init`, `files refresh`, explicit user corrections, or external host/session preparation.
 
 ## Remove extra packages
 

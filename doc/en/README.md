@@ -15,7 +15,7 @@ An **application** is a logical catalog entry: it may contain several packages, 
 3. [Configuration reference](configuration.md): write shared TOML manifests, local selection, exclusions, and hooks.
 4. [Usage](usage.md): inspect, install, update, switch configurations, remove extras, and clean history.
 5. [chezmoi and files](chezmoi.md): adopt filtering integration, synchronize safely, inspect file changes.
-6. [Troubleshooting](troubleshooting.md): exit codes, conflicts, recovery, and coverage limits.
+6. [Troubleshooting](troubleshooting.md): read-only `doctor`, exit codes, conflicts, recovery, and coverage limits.
 7. [Development](development.md): pinned tools, package structure, conventions, and checks.
 
 For AI-assisted operation, use the packaged [dotm user skill](../skills/dotm-user/SKILL.md). Its entrypoint routes to self-contained references for manifests, application additions, CLI commands, exclusions, chezmoi, verification, and recovery; it does not cover developing dotm. A complete Russian entrypoint is stored at `doc/skills/dotm-user/translations/SKILL.ru.md`; it can replace the package's `SKILL.md` while retaining the same resource paths.

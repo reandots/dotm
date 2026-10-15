@@ -15,6 +15,8 @@
 
 For a missing, malformed, or stale regular policy file, use `files refresh`; if the reported path is not a regular file, inspect it before deliberately renaming/removing it. For initial source and dotm-owned integration setup, use `dotm init` with the required configuration/repository inputs. If init rejects an unsafe, ambiguous, damaged, or user-modified integration, correct the reported issue in the effective source/settings; do not guess or replace unrelated rules. No `doctor --fix` exists.
 
+Run `dotm doctor` for broad read-only diagnosis with the actual data directory. It returns 0 only without failures, 1 for checked dotm/source/policy input failures, and 3 for host/execution/internal failures, retaining maximum severity. Independent findings remain visible when manifests/backends fail; dependency-blocked checks are explicit, not success. Failures appear once on stderr; warnings/results/skips use stdout. There is no automatic repair or Nix/session provisioning. Effective checks execute trusted templates; current-process PATH/share discovery does not prove a fresh login or desktop session.
+
 ## Diagnostic decisions
 
 | Observation | User action |
