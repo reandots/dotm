@@ -112,45 +112,10 @@ func inspectValidationConfig(result *ValidationResult, path string, config map[s
 // templates, hooks, or commands. Upstream selects custom config through --config;
 // CHEZMOI_* values are script/hook environment, not config-file overrides.
 func validateSettings(result *ValidationResult, source string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home directory for chezmoi settings: %w", err)
+	configPath, _, err := selectSettings(result)
+	if err != nil || configPath == "" {
+		return err
 	}
-	configDirs := filepath.SplitList(os.Getenv("XDG_CONFIG_DIRS"))
-	if len(configDirs) == 0 {
-		configDirs = []string{"/etc/xdg"}
-	}
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = filepath.Join(home, ".config")
-	}
-	configDirs = append([]string{configHome}, configDirs...)
-	var configPaths []string
-	for _, dir := range configDirs {
-		var candidates []string
-		for _, ext := range []string{"jsonc", "json", "toml", "yaml", "yml"} {
-			candidate := filepath.Join(dir, "chezmoi", "chezmoi."+ext)
-			// Caller-selected XDG config locations are intentionally inspected read-only.
-			if _, statErr := os.Lstat(candidate); statErr == nil { //nolint:gosec // G703: no extraction or writes.
-				candidates = append(candidates, candidate)
-			} else if !os.IsNotExist(statErr) {
-				return fmt.Errorf("inspect chezmoi configuration candidate %s: %w", candidate, statErr)
-			}
-		}
-		if len(candidates) > 1 {
-			result.add(filepath.Join(dir, "chezmoi"), "settings.selection",
-				fmt.Sprintf("multiple chezmoi configuration files: %s", strings.Join(candidates, ", ")))
-			return nil
-		}
-		if len(candidates) == 1 {
-			configPaths = candidates
-			break
-		}
-	}
-	if len(configPaths) == 0 {
-		return nil
-	}
-	configPath := configPaths[0]
 	data, exists, err := readValidationFile(result, configPath)
 	if err != nil {
 		return fmt.Errorf("read chezmoi configuration %s: %w", configPath, err)
@@ -166,4 +131,44 @@ func validateSettings(result *ValidationResult, source string) error {
 	}
 	inspectValidationConfig(result, configPath, config, source)
 	return nil
+}
+
+// selectSettings also returns the inspected candidates so setup can pin selection.
+func selectSettings(result *ValidationResult) (string, []string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve home directory for chezmoi settings: %w", err)
+	}
+	configDirs := filepath.SplitList(os.Getenv("XDG_CONFIG_DIRS"))
+	if len(configDirs) == 0 {
+		configDirs = []string{"/etc/xdg"}
+	}
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		configHome = filepath.Join(home, ".config")
+	}
+	configDirs = append([]string{configHome}, configDirs...)
+	var inspected []string
+	for _, dir := range configDirs {
+		var candidates []string
+		for _, ext := range []string{"jsonc", "json", "toml", "yaml", "yml"} {
+			candidate := filepath.Join(dir, "chezmoi", "chezmoi."+ext)
+			inspected = append(inspected, candidate)
+			// Caller-selected XDG config locations are intentionally inspected read-only.
+			if _, statErr := os.Lstat(candidate); statErr == nil { //nolint:gosec // G703: no extraction or writes.
+				candidates = append(candidates, candidate)
+			} else if !os.IsNotExist(statErr) {
+				return "", inspected, fmt.Errorf("inspect chezmoi configuration candidate %s: %w", candidate, statErr)
+			}
+		}
+		if len(candidates) > 1 {
+			result.add(filepath.Join(dir, "chezmoi"), "settings.selection",
+				fmt.Sprintf("multiple chezmoi configuration files: %s", strings.Join(candidates, ", ")))
+			return "", inspected, nil
+		}
+		if len(candidates) == 1 {
+			return candidates[0], inspected, nil
+		}
+	}
+	return "", inspected, nil
 }

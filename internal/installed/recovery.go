@@ -66,7 +66,7 @@ func CheckPendingRecovery() error {
 	}
 	journal := filepath.Join(base, "dotm", updateJournalName)
 	if _, err := os.Lstat(journal); err == nil {
-		return errors.New("pending update recovery journal exists; recover it before files refresh")
+		return errors.New("pending update recovery journal exists; recover it before setup or files refresh")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect pending update recovery journal: %w", err)
 	}

@@ -20,9 +20,18 @@ Examples use the default data directory. Add `--data-dir /path/to/data` for anot
 | `files refresh [--update-source]` | Build/check/publish policy; only the explicit flag acquires/updates source |
 | `files status` | Refresh policy locally and inventory managed changes/unclassified files; never fetch |
 | `remove-extras [--yes]` | Remove explicitly approved extras, retaining desired and recorded infrastructure descriptors |
+| `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs, chezmoi backend/source, owned ignore integration, and initial policy; no application deployment |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | Separate history pruning and optional shared-store GC; no manifests/selection required |
 
 The files commands evaluate trusted templates but do not apply configurations, run application hooks, or inspect Nix. See [chezmoi and files](chezmoi.md).
+
+## Initialize dotm
+
+`init` completes first-time setup for an already installed/running dotm. It is not an installer for dotm itself. Prepare Nix and Git externally; init may acquire only the missing chezmoi infrastructure backend. See [installation](installation.md#initialize-dotm) for prerequisites and examples.
+
+Supply `--configuration` and `--repository` when local inputs do not already provide an unambiguous choice. The global `--data-dir` selects shared manifests, not machine-local settings. Init validates local inputs and paths before writes and collects separate approvals for local-intent changes and source replacement. It has no `--yes` bypass: cancellation/EOF fails safely.
+
+The command prepares approved dotm files, backend, source checkout, compatible static chezmoi settings, root ignore integration, and initial published policy, then checks normal discovery. A matching checkout is checked locally without fetch/fast-forward; it does not overwrite unrelated dirty or native-rule content. Init never installs selected applications, runs hooks, applies destinations, auto-commits, or silently changes origin. Unsafe/damaged integration needs correction rather than automatic rewriting. Review reported created/changed files, package effects, retained replacement backups, and policy publication, then review and commit source changes yourself. Stages are not a cross-resource transaction: a later error may follow completed effects. Re-running successful setup makes no unnecessary changes.
 
 ## Inspect and install
 
@@ -92,7 +101,7 @@ Manifests/selection are loaded once, but each operation inspects current package
 
 ## Concurrency and output
 
-One mutation per user's XDG state directory: `install`, `update`, `update cfg`, `files refresh`, `files status`, `remove-extras`, and non-dry-run `clean` fail immediately if ownership is busy. Combined operations hold it across prompts and hooks. Nested mutation from a hook fails instead of waiting. Read-only commands and cleanup dry runs remain available, but are not atomic snapshots.
+One mutation per user's XDG state directory: `init`, `install`, `update`, `update cfg`, `files refresh`, `files status`, `remove-extras`, and non-dry-run `clean` fail immediately if ownership is busy. Combined operations hold it across prompts and hooks. Nested mutation from a hook fails instead of waiting. Read-only commands and cleanup dry runs remain available, but are not atomic snapshots.
 
 Private Linux flock files live under `/tmp/dotm-<uid>/`; do not delete them while operations may be running. Native update/add/recovery children retain ownership if dotm dies; hooks do not, so stop surviving hooks before retrying. Direct Nix/Git/chezmoi mutations are not coordinated, nor are independent state directories sharing one source.
 

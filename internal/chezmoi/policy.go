@@ -343,14 +343,28 @@ func PublishPolicy(ctx context.Context, source string, policy Policy) error {
 	if err = os.WriteFile(candidatePath, want, 0o600); err != nil {
 		return err
 	}
+	info, statErr := os.Lstat(path)
+	if statErr == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("published files policy %s is not a regular file; correct the policy path manually", path)
+	}
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return statErr
+	}
+	existing, readErr := os.ReadFile(path)
+	unchanged := readErr == nil && bytes.Equal(existing, want)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
 	if _, err = policyCommand(ctx, command, "--override-data", string(override), "dump", "--format=json"); err != nil {
 		return err
 	}
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	if err = os.Rename(candidatePath, path); err != nil {
-		return fmt.Errorf("publish external chezmoi policy: %w", err)
+	if !unchanged {
+		if err = os.Rename(candidatePath, path); err != nil {
+			return fmt.Errorf("publish external chezmoi policy: %w", err)
+		}
 	}
 	if _, err = policyCommand(ctx, command, "dump", "--format=json"); err != nil {
 		return fmt.Errorf("policy published, but normal integration inspection failed: %w", err)

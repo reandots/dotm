@@ -13,19 +13,19 @@
 
 `cfg lint` reports source/settings context without manufacturing declaration provenance. Files declaration findings may include their actual source/application/field/path and related declaration; integration, source/settings, and policy findings use their actual path/context without a fake declaration. `files refresh` errors are returned while stdout carries warnings/status only; lifecycle file errors are returned too, while warnings and nonfailure target outcomes remain on stdout. Existing lifecycle continuation and exit codes are unchanged.
 
-Repair only missing, malformed, or stale regular policy with `files refresh`. If the reported policy path is not a regular file, inspect it before deliberately renaming/removing it. Fix integration by manually adopting the [example root inclusion](../../../en/chezmoi.md) in the effective source root (including `.chezmoiroot`); correct source/settings and declaration TOML manually. No `doctor --fix` exists.
+For a missing, malformed, or stale regular policy file, use `files refresh`; if the reported path is not a regular file, inspect it before deliberately renaming/removing it. For initial source and dotm-owned integration setup, use `dotm init` with the required configuration/repository inputs. If init rejects an unsafe, ambiguous, damaged, or user-modified integration, correct the reported issue in the effective source/settings; do not guess or replace unrelated rules. No `doctor --fix` exists.
 
 ## Diagnostic decisions
 
 | Observation | User action |
 | --- | --- |
-| Missing manifest/selection | Arrange both shared TOML files and local `config.toml`; `--data-dir` moves shared inputs only |
-| Nix unavailable/wrong store/features/unwritable state | Fix host/user provisioning externally; dotm neither bootstraps nor elevates |
+| Missing manifest/selection | Use `dotm init` to create approved dotm input files and provide `--configuration` when needed; it does not download shared manifests. `--data-dir` moves shared inputs only |
+| Nix unavailable/wrong store/features/unwritable state | Fix host/user provisioning externally; dotm does not install Nix or elevate |
 | Installed package unavailable in session | Check standard XDG profile bin/share exposure and new session; installed shells do not change login shell |
 | Missing packages skip configs | Inspect full dependency closure, use authorized `install`, retry configurations |
 | Dirty/diverged/detached source | Preserve, reconcile, and publish work explicitly; no automatic stash/reset/clean/rebase |
 | Source replacement lacks publication proof | Inspect local objects and remote reachability; do not delete unpublished work to pass |
-| Missing/stale/disconnected policy | Follow Files binding/inclusion: manually adopt the example root inclusion and correct reported source/settings; refresh regenerable regular policy, then lint |
+| Missing/stale/disconnected policy | Use `dotm init` for initial source/integration setup; correct any unsafe/ambiguous finding it reports, then refresh regenerable regular policy and lint |
 | Native `!` rule intersects exclusions | Revise the owning native rule, not later positive ignores |
 | Local content/type/permission/symlink conflict | Compare source/destination, preserve changes, deliberately reconcile and retry |
 | Busy mutation ownership | Let operation finish; stop surviving writers/hooks before retry; do not delete locks |
@@ -47,7 +47,7 @@ Generated flakes/locks normally live at `${XDG_STATE_HOME:-$HOME/.local/state}/d
 
 Missing/corrupt source/lock/pointer makes existing entries external, not evidence of installed desired packages. Update has no managed package candidates, though eligible package-free configurations can run. Install creates a unique source at current nixos-unstable and installs the desired set, retaining old entries/source paths. Collisions fail explicitly: review conflicting external entries and, with authorization, remove through `remove-extras` before retry. Valid manifests/selection/native profile and successful pending recovery remain required.
 
-Recorded infrastructure is the exception: its canonical descriptor/source evidence remains retained even when the current generated source is lost or rotated. A pending infrastructure-role record marks acquisition intent written before adding the backend; repeated internal setup reconciles a completed add from canonical profile evidence without advancing packages. Preserve that state and native generations; do not guess ownership from names or delete the record to make the backend removable. This internal component has no public setup command yet and refuses pending package recovery; use the existing package-operation recovery path first. Successful acquisition is not rolled back if later setup work fails.
+Recorded infrastructure is the exception: its canonical descriptor/source evidence remains retained even when the current generated source is lost or rotated. A pending infrastructure-role record marks acquisition intent written before adding the backend; `init` can reconcile a completed add from canonical profile evidence without advancing packages. Preserve that state and native generations; do not guess ownership from names or delete the record to make the backend removable. Init refuses pending package recovery; use the existing package-operation recovery path first. Successful acquisition is not rolled back if later setup work fails.
 
 ## Retained generation rollback
 

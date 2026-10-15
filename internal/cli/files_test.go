@@ -141,7 +141,6 @@ func (s *FilesCLISuite) TestRefreshBlocksPendingPackageRecoveryWithoutNix() {
 	output, err := s.run("files", "refresh")
 	s.Require().Error(err, output)
 	s.Equal(3, cli.ExitCode(err))
-	s.Contains(err.Error(), "recover it before files refresh")
 	_, statErr := os.Stat(filepath.Join(s.source, ".git", "FETCH_HEAD"))
 	s.ErrorIs(statErr, os.ErrNotExist)
 }

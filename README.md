@@ -12,7 +12,7 @@ Deploy personal Linux application environments with **Nix** and synchronize appl
 - Runs repeatable application hooks and checks file filtering and unclassified HOME/XDG paths.
 - Separates profile-history cleanup from explicitly requested shared-store garbage collection.
 
-dotm is a personal Linux CLI, not a system provisioner. It requires a configured multi-user Nix daemon; configuration deployment additionally requires Git, chezmoi, and deliberate file-policy integration. An internal setup component can acquire and retain chezmoi through Nix, but no public bootstrap/init command is available yet: ordinary commands still require a prepared backend. dotm does not install Nix or Git, change the login shell, configure a desktop session, or enable system services.
+dotm is a personal Linux CLI, not a system provisioner. It requires a configured multi-user Nix daemon; configuration deployment additionally requires Git. `dotm init` prepares the chezmoi backend, source, and policy integration, acquiring only missing chezmoi infrastructure. It does not install dotm itself or Nix/Git, change the login shell, configure a desktop session, or enable system services.
 
 ## Start here
 

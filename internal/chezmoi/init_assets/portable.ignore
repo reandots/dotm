@@ -1,0 +1,20 @@
+{{- $d := default dict (get . "dotm") -}}
+{{- if not (default false (get $d "nativeOnly")) -}}
+{{- $state := env "XDG_STATE_HOME" -}}
+{{- if eq $state "" -}}
+{{- $home := env "HOME" -}}
+{{- if or (eq $home "") (not (isAbs $home)) -}}{{ fail "HOME must be an absolute path when XDG_STATE_HOME is unset" }}{{- end -}}
+{{- $state = printf "%s/.local/state" $home -}}
+{{- else if not (isAbs $state) -}}{{ fail "XDG_STATE_HOME must be an absolute path" }}{{- end -}}
+{{- $f := default "" (get $d "policyCandidate") -}}
+{{- if eq $f "" -}}{{- $f = printf "%s/dotm/chezmoi-policy.json" (trimSuffix "/" $state) -}}{{- end -}}
+{{- if stat $f -}}
+{{- $p := include $f | fromJson -}}
+{{- if and (eq (int $p.schemaVersion) 1) (eq $p.repository (trimSuffix "\n" (output "git" "-C" .chezmoi.sourceDir "remote" "get-url" "origin"))) (eq $p.sourceDir .chezmoi.sourceDir) (eq $p.destDir .chezmoi.destDir) (eq $p.configFile .chezmoi.configFile) -}}
+{{ range $p.patterns }}{{ . }}
+{{ end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+# Existing native rules continue here.

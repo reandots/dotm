@@ -56,7 +56,7 @@ Do not hide owned configuration conflicts by adding unmanaged exclusions. Other 
 
 ## First deployment prerequisites
 
-dotm is already installed and available on PATH; do not search for a checkout, build it, or install it. Backend readiness is separate: Nix must already be a multi-user daemon with ordinary untrusted-user access, `nix-command`, `flakes`, enabled XDG base directories, and writable user Nix state. Useful diagnostics:
+dotm must already be installed and available on PATH; `init` prepares a running dotm and does not install its executable. Nix must already be a multi-user daemon with ordinary untrusted-user access, `nix-command`, `flakes`, enabled XDG base directories, and writable user Nix state. Useful diagnostics:
 
 ```sh
 nix --version
@@ -65,8 +65,8 @@ nix config show experimental-features
 nix config show use-xdg-base-directories
 ```
 
-Expected store: daemon, `Trusted: 0`. The session must expose `${XDG_STATE_HOME:-$HOME/.local/state}/nix/profile/bin` in PATH and its `share` in application discovery (for example XDG_DATA_DIRS). Custom XDG paths must be absolute and consistent. Git/chezmoi and Files integration are needed only for file workflows. Network/cache access is required for acquisition. Missing provisioning is an external prerequisite, not permission to use sudo or alter host services, login shell, or GUI session.
+Expected store: daemon, `Trusted: 0`. Git is also an external prerequisite. The session must expose `${XDG_STATE_HOME:-$HOME/.local/state}/nix/profile/bin` in PATH and its `share` in application discovery (for example XDG_DATA_DIRS). Custom XDG paths must be absolute and consistent. Missing Nix/host provisioning is an external prerequisite, not permission to use sudo or alter host services, login shell, or GUI session. `dotm init` handles chezmoi bootstrap when needed.
 
-Arrange shared/local inputs per Manifests, inspect `configs`/`apps`/`show`, then `status`, and deploy only within the request. First installation locks `nixos-unstable`; later healthy installs reuse the lock. No special Nix version minimum is established by the exercised Nix 2.35.6 baseline.
+For initial setup, use `dotm init --configuration NAME --repository URL`, adding global `--data-dir /actual/shared/data` before `init` when shared manifests are not at their default location. Omit named inputs only when existing local settings/manifests determine them unambiguously. Init validates data and target paths before writes, obtains separate approvals for local-intent changes and source replacement, and has no `--yes` bypass. Cancellation/EOF fails safely. It may acquire only missing chezmoi infrastructure; it does not install selected applications, run their hooks, or apply destinations.
 
-There is no public `init`/bootstrap command yet; ordinary commands do not acquire missing chezmoi. An internal setup component can acquire it through Nix without application deployment. A backend recorded in XDG-state `dotm/infrastructure.json` appears separately in `status`, is retained by source regeneration, and is protected from `remove-extras --yes` even after dropping a sharing application. Do not classify it as removable extra or infer ownership from a binary/store basename. Ordinary update advances infrastructure only when its descriptor is in the selected application update scope; external executables are not claimed.
+Init is repeat-safe on a matching checkout and does not fetch/fast-forward it. It preserves unrelated dirty source content and native ignore rules, but rejects unsafe or ambiguous integration edits for correction. Review reported dotm/source files, package effects, backups, and policy publication; setup is not a cross-resource transaction. Review and commit source changes yourself. See the public installation guide for detailed stages and safeguards.

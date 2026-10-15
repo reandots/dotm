@@ -2,7 +2,7 @@
 
 ## Supported environment
 
-Selections with config targets require per-selection `backend = "chezmoi"` and real `repository` settings. Git and chezmoi must already be available. dotm uses the shared source `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination, not an isolated private environment. chezmoi v2.74.1 is an exercised baseline, not an established minimum.
+Selections with config targets require per-selection `backend = "chezmoi"` and real `repository` settings. Git must be available; `dotm init` can reuse compatible chezmoi or acquire the missing infrastructure backend. The command does not install selected applications, run their hooks, or apply destinations. dotm uses the shared source `${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi`, normal chezmoi configuration/cache/persistent state, and its effective destination, not an isolated private environment. chezmoi v2.74.1 is an exercised baseline, not an established minimum.
 
 Only normal `mode = "file"` is supported. Targets must map inside effective `destDir`. Catalog expansion of `$XDG_CONFIG_HOME` does not remap chezmoi `dot_config`; use a source layout/static settings compatible with actual custom XDG paths. Never broaden destination to `/` as a workaround.
 
@@ -12,9 +12,9 @@ Rejected compatibility features: run/modify/remove/exact actions, automatic exte
 
 ## External-policy integration
 
-Required before configuration application. Make changes in the actual dotfiles/provisioning inputs, not an undocumented ephemeral setup.
+Required before configuration application. For first setup, run `dotm init --configuration NAME --repository URL`; put global `--data-dir /actual/shared/data` before `init` when needed. Init installs the owned integration, preserving native rules and refusing ambiguous/user-modified edits. Review and commit its source changes yourself. If init reports a corrective error, make the specific correction in the actual dotfiles/provisioning inputs rather than guessing.
 
-1. Manually adopt the following inclusion in `.chezmoiignore` in the **effective source root** (respect `.chezmoiroot`), preserving existing root/nested native rules. Replace the template in your own checkout when dotm's documented integration changes; dotm does not edit the checkout automatically.
+When correcting an integration, the current inclusion template is:
 
    ```text
    {{- $d := default dict (get . "dotm") -}}
@@ -62,7 +62,7 @@ Never exclude an owned config as unmanaged to bypass a conflict. Warnings permit
 
 `files refresh` validates a fresh candidate without requiring old-policy freshness, atomically publishes it, then verifies normal integration. Failure before publication preserves old policy; failure after publication does not roll it back. Only `--update-source` adds acquisition/fetch. `files status` refreshes locally without fetch. Neither command applies files/runs application hooks/inspects packages. Pending package recovery blocks refresh/status without invoking Nix; read-only lint does not recover.
 
-Refresh repairs only a missing, malformed, or stale **regular** policy file. If the reported policy path is not a regular file, inspect and deliberately move/remove that object before retrying. It does not repair a missing root inclusion, incompatible source layout, or incorrect chezmoi settings: manually adopt the current example inclusion at the effective source root (respecting `.chezmoiroot`) and correct source/settings. Declaration errors require editing the named manifest or local `files.toml`. There is no `doctor --fix` repair path.
+Refresh repairs only a missing, malformed, or stale **regular** policy file. If the reported policy path is not a regular file, inspect and deliberately move/remove that object before retrying. For missing initial source/integration setup, use `dotm init` as described above. It rejects incompatible source layouts/settings, ambiguous legacy integrations, and damaged or user-modified blocks for explicit correction rather than rewriting them. Declaration errors require editing the named manifest or local `files.toml`. There is no `doctor --fix` repair path.
 
 `install`, `update`, and `update cfg` run source acquisition and policy refresh after eligible pre-configuration hooks, before scoped apply. Errors remain in the returned lifecycle failure; stdout contains warnings and nonfailure target outcomes. Policy errors preserve already committed package work.
 

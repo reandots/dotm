@@ -1,9 +1,12 @@
 package chezmoi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 
 	"dotm/internal/manifest"
 )
@@ -37,6 +40,8 @@ func PolicyInputFor(data *manifest.Data, config manifest.Configuration, selectio
 type PolicyRefreshResult struct {
 	Policy      Policy
 	Diagnostics []manifest.FileDiagnostic
+	// Published means the candidate exists as regular policy, even after a late failure.
+	Published bool
 }
 
 // RefreshPolicy composes candidate inspection, publication, and normal effective lint.
@@ -54,8 +59,15 @@ func RefreshPolicy(ctx context.Context, source string, input PolicyInput) (Polic
 		return result, err
 	}
 	if err = PublishPolicy(ctx, source, policy); err != nil {
+		path, pathErr := PolicyPath(policy)
+		want, marshalErr := json.Marshal(policy)
+		got, readErr := os.ReadFile(path)
+		info, statErr := os.Lstat(path)
+		result.Published = pathErr == nil && marshalErr == nil && readErr == nil &&
+			statErr == nil && info.Mode().IsRegular() && bytes.Equal(got, want)
 		return result, err
 	}
+	result.Published = true
 	published, err := CheckPolicy(ctx, source, policy, true)
 	// The post-publication check is authoritative; don't repeat candidate warnings.
 	result.Diagnostics = append(input.Files.Diagnostics[:len(input.Files.Diagnostics):len(input.Files.Diagnostics)],

@@ -10,7 +10,7 @@ An **application** is a logical catalog entry: it may contain several packages, 
 
 ## Reading guide
 
-1. [Installation](installation.md): build dotm, prepare Nix and session paths, arrange local settings.
+1. [Installation](installation.md): build dotm, prepare Nix and session paths, arrange local settings, and run `dotm init`.
 2. [Demo and examples](examples.md): inspect the example catalog without touching a profile.
 3. [Configuration reference](configuration.md): write shared TOML manifests, local selection, exclusions, and hooks.
 4. [Usage](usage.md): inspect, install, update, switch configurations, remove extras, and clean history.

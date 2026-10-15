@@ -19,8 +19,9 @@ Assume `dotm` is already installed and available on PATH; invoke it directly as 
 | `files status` | Refresh local policy and inventory files; no fetch or apply |
 | `remove-extras [--yes]` | Explicitly approved extra native package entries only |
 | `clean [--keep N] [--gc] [--dry-run] [--yes]` | History pruning and explicitly optional shared-store GC; no manifests/local selection |
+| `init [--configuration NAME] [--repository URL]` | Prepare dotm inputs and chezmoi/policy integration; never deploys selected applications |
 
-There is no generic install/update dry run, positional `install <app>`, force-conflict option, or implicit removal. `show` and `status` inspect scope, not a guarantee of future backend success. Files commands require their file workflow and do not inspect Nix, apply files, or run application hooks. Only `cfg lint` is passive source lint; files checks may execute template helpers.
+There is no generic install/update dry run, positional `install <app>`, force-conflict option, or implicit removal. `init` prepares an already installed dotm; it does not install dotm, Nix, or Git, and does not install selected applications, run hooks, or apply destinations. It has no `--yes` bypass. `show` and `status` inspect scope, not a guarantee of future backend success. Files commands require their file workflow and do not inspect Nix, apply files, or run application hooks. Only `cfg lint` is passive source lint; files checks may execute template helpers.
 
 ## Install versus update
 
@@ -60,7 +61,7 @@ Manifests/selection load once but each cycle inspects current packages and retai
 
 ## Concurrency and output
 
-One mutation per user's XDG state: install/update/update cfg/files refresh/files status/remove-extras/non-dry-run clean fail immediately when busy. Combined operations hold ownership through prompts/hooks; a nested hook mutation fails rather than waiting. Read-only inspection and cleanup dry-run are not atomic snapshots.
+One mutation per user's XDG state: `init`, install/update/update cfg/files refresh/files status/remove-extras/non-dry-run clean fail immediately when busy. Combined operations hold ownership through prompts/hooks; a nested hook mutation fails rather than waiting. Read-only inspection and cleanup dry-run are not atomic snapshots.
 
 Do not delete `/tmp/dotm-<uid>/` lock files. Native update/add/recovery children can retain ownership after dotm dies; hooks do not, so stop surviving hooks before retry. Direct Nix/Git/chezmoi operations and independent state directories sharing a source are not coordinated.
 stdout contains warnings, inspection/status, and actual nonfailure stage/target outcomes. Error diagnostics are retained in the returned failure chain and printed once on stderr with the original cause; do not expect the same error to be repeated on stdout. A nonzero exit may follow successful package/file changes. Use Recovery to interpret it.

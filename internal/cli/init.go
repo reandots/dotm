@@ -1,0 +1,148 @@
+package cli
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+
+	"dotm/internal/chezmoi"
+	"dotm/internal/initprep"
+	"dotm/internal/installed"
+	"dotm/internal/manifest"
+)
+
+func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Writer) (resultErr error) {
+	stage := "mutation ownership"
+	defer func() {
+		if resultErr != nil {
+			resultErr = fmt.Errorf("init failed at %s; completed effects above are retained: %w", stage, resultErr)
+		}
+	}()
+	ctx, release, err := installed.BeginMutation(context.Background())
+	if err != nil {
+		return err
+	}
+	defer release()
+	stage = "pending recovery check"
+	if err = installed.CheckPendingRecovery(); err != nil {
+		return err
+	}
+	stage = "input preparation"
+	plan, err := initprep.Plan(ctx, initprep.Options{
+		DataDir: dataDir, Configuration: options.Configuration, Repository: options.Repository,
+	})
+	if err != nil {
+		return err
+	}
+	prepared, err := plan.Apply(ctx, confirmInit(in, out))
+	for _, effect := range prepared.Completed {
+		action := "changed"
+		if effect.Created {
+			action = "created"
+		}
+		fmt.Fprintf(out, "Dotm file %s: %s\n", action, effect.Path)
+	}
+	if err != nil {
+		return err
+	}
+	stage = "chezmoi backend"
+	backend, err := installed.BootstrapChezmoi(ctx, stderr)
+	for _, effect := range backend.Effects {
+		fmt.Fprintf(out, "Backend %s %s: %s\n", effect.Resource, effect.Action, effect.Path)
+	}
+	if err != nil {
+		return err
+	}
+	ctx = chezmoi.WithExecutable(ctx, backend.Executable)
+	fmt.Fprintf(out, "Chezmoi executable: %s\n", backend.Executable)
+	stage = "source acquisition"
+	source, err := chezmoi.SetupSource(ctx, plan.Repository, confirmReplacement(in, out))
+	if source.Changed {
+		fmt.Fprintf(out, "Checkout acquired: %s\n", source.Path)
+	}
+	if source.Backup != "" {
+		fmt.Fprintf(out, "Retained checkout backup: %s\n", source.Backup)
+	}
+	if err != nil {
+		return err
+	}
+	stage = "settings and root integration"
+	integration, err := chezmoi.PrepareIntegration(ctx, source.Path)
+	for _, effect := range integration.Effects {
+		fmt.Fprintf(out, "Integration file %s: %s\n", effect.Action, effect.Path)
+	}
+	// Source edits remain user-owned even if a later stage fails.
+	if len(integration.Effects) != 0 {
+		fmt.Fprintf(out, "Review the checkout diff at %s and commit source changes yourself; "+
+			"external policy is separate local state.\n", source.Path)
+	}
+	if err != nil {
+		return err
+	}
+	stage = "initial policy"
+	selectionPath, err := manifest.SelectionPath()
+	if err != nil {
+		return err
+	}
+	if dataDir == "" {
+		dataDir = filepath.Join(filepath.Dir(selectionPath), "data")
+	}
+	data, err := manifest.Load(dataDir)
+	if err != nil {
+		return err
+	}
+	config, err := data.Selection(selectionPath)
+	if err != nil {
+		return err
+	}
+	input, err := chezmoi.PolicyInputFor(data, config, selectionPath)
+	if err != nil {
+		return err
+	}
+	refreshed, err := chezmoi.RefreshPolicy(ctx, source.Path, input)
+	if refreshed.Published {
+		if printErr := printPolicyPath(out, refreshed.Policy); printErr != nil {
+			return errors.Join(err, printErr)
+		}
+	}
+	if printErr := printFileDiagnostics(out, manifest.FileModel{Diagnostics: refreshed.Diagnostics}); printErr != nil {
+		return errors.Join(err, printErr)
+	}
+	if err != nil {
+		return err
+	}
+	stage = "normal chezmoi discovery"
+	if err = chezmoi.VerifyDiscovery(ctx, source.Path, refreshed.Policy); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Init complete; no user applications, hooks, or destination configurations were applied.")
+	return nil
+}
+
+func confirmInit(in io.Reader, out io.Writer) initprep.Confirm {
+	reader, ok := in.(*bufio.Reader)
+	if !ok {
+		reader = bufio.NewReader(in)
+	}
+	return func(ctx context.Context, conflict initprep.Conflict) (bool, error) {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		if _, err := fmt.Fprintf(out, "Change %s in %s?\nOld value: %q\nNew value: %q\n"+
+			"Type yes to approve: ", conflict.Field, conflict.Path, conflict.Before, conflict.After); err != nil {
+			return false, err
+		}
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return false, err
+		}
+		if err = ctx.Err(); err != nil {
+			return false, err
+		}
+		return strings.TrimSpace(answer) == "yes", nil
+	}
+}

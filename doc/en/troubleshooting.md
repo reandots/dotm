@@ -17,7 +17,7 @@ Diagnostics are emitted once: stdout carries warnings, status, and actual stage/
 
 `cfg lint` reports whole-source and settings findings without inventing declaration context. `files lint` may report genuine declaration problems with their source/application/field/path and related declaration. Integration, source/settings, and policy findings use their real path/context and message; they have no declaration unless one actually produced them. `files refresh` returns its errors to the caller and prints warnings/status only; files lifecycle errors likewise remain in the returned failure while stdout reports warnings and nonfailure target outcomes.
 
-For repair, `files refresh` can regenerate only a missing, malformed, or stale regular policy file. If the reported policy path is not a regular file, remove/rename it only after reviewing it, then refresh. Repair integration by manually adopting the current [example root inclusion](chezmoi.md) into the effective source root (including `.chezmoiroot`), and correct source or chezmoi settings manually. Correct declaration errors in the named TOML input. Do not expect `init` or `doctor --fix` to perform these repairs.
+For a missing, malformed, or stale regular policy file, `files refresh` can regenerate it. If the reported policy path is not a regular file, remove/rename it only after reviewing it, then refresh. For missing initial chezmoi/source/owned integration setup, use `dotm init` after reviewing its independent approvals and effects. Unsafe, ambiguous, damaged, or user-modified integrations and incompatible settings require the specific correction reported; do not replace them by guesswork. Correct declaration errors in the named TOML input. There is no `doctor --fix` repair path.
 
 ## Common diagnostics
 
@@ -29,7 +29,7 @@ For repair, `files refresh` can regenerate only a missing, malformed, or stale r
 | Missing packages block configuration | Inspect full dependency closure; install missing applications, then retry configuration work |
 | Dirty/diverged/detached source | Preserve work and resolve/publish it deliberately; dotm does not stash/reset/clean/rebase |
 | Source replacement cannot prove publication | Inspect local objects/remote reachability; never delete unpublished work merely to pass a check |
-| Missing/stale/disconnected file policy | Follow [integration](chezmoi.md), manually adopt the example root inclusion and correct source/settings as reported; then `files refresh` for regenerable regular policy. Lint alone does not publish |
+| Missing/stale/disconnected file policy | Use `dotm init` for initial source/integration setup; correct any unsafe/ambiguous finding it reports, then `files refresh` for regenerable regular policy. Lint alone does not publish |
 | Native `!` rule overrides generated exclusion | Revise the owning native rule; adding later positive ignores cannot override negation precedence |
 | Local file/type/symlink conflict | Compare source and destination, preserve local changes, deliberately reconcile and retry; no force mode is provided |
 | Another mutation owns the state | Wait for it to finish; stop surviving hooks/native/manual writers before retry, never delete lock files |
@@ -51,7 +51,7 @@ Generated flakes/locks normally live in `${XDG_STATE_HOME:-$HOME/.local/state}/d
 
 With missing/corrupt source, lock, or current pointer, existing profile entries become **external**, not proof that desired packages are installed. `update` has no managed package candidates but can still run eligible package-free configuration work. `install` creates a unique source locked to current `nixos-unstable` and installs the whole desired package set while preserving old entries/source paths. File collisions fail explicitly: review and remove conflicting external entries through `remove-extras` before retrying. Valid manifests/selection/native profile and successful pending recovery remain required; corruption does not bypass those gates.
 
-Recorded infrastructure is an exception: its canonical descriptor/source evidence remains retained independently of the current source, without making other old entries managed. Preserve `dotm/infrastructure.json` under XDG state. Its pending flag records acquisition intent before native add; repeated internal setup can reconcile a completed add without advancing packages. Successful bootstrap is not rolled back by a later setup failure. This is currently an internal component, not a public setup command, and it refuses pending package recovery: complete the existing package-operation recovery path first. Do not remove the role record or guess ownership from binary names.
+Recorded infrastructure is an exception: its canonical descriptor/source evidence remains retained independently of the current source, without making other old entries managed. Preserve `dotm/infrastructure.json` under XDG state. Its pending flag records acquisition intent before native add; init can reconcile a completed add without advancing packages, but refuses pending package recovery. Complete the existing package-operation recovery path first. Successful acquisition is not rolled back if later setup fails. Do not remove the role record or guess ownership from binary names.
 
 ## Retained-generation rollback
 

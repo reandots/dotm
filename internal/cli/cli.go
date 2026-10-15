@@ -28,6 +28,7 @@ type cli struct {
 	Apps         appsCmd         `cmd:"" help:"List catalog applications, dependencies, packages, configuration targets and hook paths"`
 	Show         showCmd         `cmd:"" help:"Show the local selection and resolved applications, packages and owned configuration targets"`
 	Status       statusCmd       `cmd:"" help:"Inspect the Nix profile and configuration readiness from current package requirements"`
+	Init         initCmd         `cmd:"" help:"Prepare dotm files, chezmoi checkout and file policy without installing applications or applying configurations"`
 	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
 	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
 	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
@@ -66,6 +67,10 @@ type filesCmd struct {
 	Status struct{} `cmd:"" help:"Refresh local files policy and inspect filesystem status"`
 }
 
+type initCmd struct {
+	Configuration string `help:"Select an existing configuration, or name the empty configuration created for new manifests"`
+	Repository    string `help:"Git repository for the shared chezmoi checkout; requires approval to change existing intent"`
+}
 type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
@@ -140,6 +145,9 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 	}
 	if command == "cfg lint" {
 		return lintSource(app.Cfg.Lint.Source, out)
+	}
+	if command == "init" {
+		return runInit(app.Init, app.DataDir, in, out, stderr)
 	}
 	if app.DataDir == "" {
 		selectionPath, pathErr := manifest.SelectionPath()

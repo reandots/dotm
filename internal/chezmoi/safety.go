@@ -20,6 +20,10 @@ type checkout struct {
 // Reject configurations that can hide work or depend on another checkout.
 // Ordinary Git administration files are preserved in the retained backup.
 func inspectCheckout(ctx context.Context, path string) (checkout, error) {
+	return inspectCheckoutMode(ctx, path, true)
+}
+
+func inspectCheckoutMode(ctx context.Context, path string, requireClean bool) (checkout, error) {
 	var state checkout
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -70,20 +74,24 @@ func inspectCheckout(ctx context.Context, path string) (checkout, error) {
 			return state, fmt.Errorf("source submodules are unsupported")
 		}
 	}
-	status, err := git(ctx, path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-		"--ignored=matching", "--ignore-submodules=none")
-	if err != nil {
-		return state, err
+	if requireClean {
+		status, statusErr := git(ctx, path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+			"--ignored=matching", "--ignore-submodules=none")
+		if statusErr != nil {
+			return state, statusErr
+		}
+		if status != "" {
+			return state, fmt.Errorf("source has dirty, untracked, or ignored data; refusing synchronization")
+		}
 	}
-	if status != "" {
-		return state, fmt.Errorf("source has dirty, untracked, or ignored data; refusing synchronization")
-	}
-	files, err := git(ctx, path, "ls-files", "-z")
-	if err != nil {
-		return state, err
-	}
-	if directoryErr := checkUntrackedDirectories(path, files); directoryErr != nil {
-		return state, directoryErr
+	if requireClean {
+		files, filesErr := git(ctx, path, "ls-files", "-z")
+		if filesErr != nil {
+			return state, filesErr
+		}
+		if directoryErr := checkUntrackedDirectories(path, files); directoryErr != nil {
+			return state, directoryErr
+		}
 	}
 	state.repository, err = git(ctx, path, "config", "--get-all", "remote.origin.url")
 	if err != nil || state.repository == "" || strings.Contains(state.repository, "\n") {

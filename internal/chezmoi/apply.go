@@ -69,8 +69,11 @@ type applyCommand struct {
 
 func (c applyCommand) run(ctx context.Context, args ...string) ([]byte, string, error) {
 	flags := []string{
-		"--source", c.source, "--no-tty", "--no-pager", "--color=false", "--progress=false",
+		"--no-tty", "--no-pager", "--color=false", "--progress=false",
 		"--force=false", "--interactive=false", "--dry-run=false", "--refresh-externals=never",
+	}
+	if c.source != "" {
+		flags = append([]string{"--source", c.source}, flags...)
 	}
 	// No shell; source and destination paths are separate arguments.
 	executable := "chezmoi"
