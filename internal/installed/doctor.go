@@ -18,14 +18,14 @@ type DoctorFinding struct {
 	Check    string
 	Message  string
 	Remedy   string
-	Severity int
+	Severity Severity
 	Blocked  bool
 }
 
 // Diagnose reports read-only host and session readiness. Session checks describe
 // only the environment inherited by this process, not a fresh login session.
 func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string) {
-	add := func(check, message, remedy string, severity int, blocked bool) {
+	add := func(check, message, remedy string, severity Severity, blocked bool) {
 		finding := DoctorFinding{
 			Check: check, Message: message, Remedy: remedy,
 			Severity: severity, Blocked: blocked,

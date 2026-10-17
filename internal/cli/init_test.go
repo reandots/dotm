@@ -59,6 +59,7 @@ func (s *InitCLISuite) SetupTest() {
 func (s *InitCLISuite) write(path, contents string) {
 	s.T().Helper()
 	s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
+	// #nosec G703 -- Callers supply fixture paths under this test's private temporary root.
 	s.Require().NoError(os.WriteFile(path, []byte(contents), 0o600))
 }
 

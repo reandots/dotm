@@ -26,7 +26,7 @@ func (r *doctorReport) finding(f installed.DoctorFinding) {
 	}
 	if f.Severity != 0 {
 		r.failures = append(r.failures, &installed.OperationError{
-			Severity: installed.Severity(f.Severity), Err: errors.New(text),
+			Severity: f.Severity, Err: errors.New(text),
 		})
 		return
 	}
@@ -43,7 +43,7 @@ func (r *doctorReport) check(name string, err error, remedy string) bool {
 		return true
 	}
 	r.finding(installed.DoctorFinding{
-		Check: name, Message: err.Error(), Remedy: remedy, Severity: ExitCode(classifyCheckedOrHostError(err)),
+		Check: name, Message: err.Error(), Remedy: remedy, Severity: classifyCheckedOrHostError(err).Severity,
 	})
 	return false
 }

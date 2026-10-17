@@ -315,7 +315,9 @@ func (s *InstalledSuite) TestPackageFreeAndDependencyReadiness() {
 		{ID: "ambiguous", Packages: []manifest.Package{{Attr: "baz"}}},
 		{ID: "missing", Packages: []manifest.Package{{Attr: "absent"}}},
 		{ID: "aggregator", Dependencies: []string{"partial", "shared", "missing"}},
+		{ID: "blocked-config", Dependencies: []string{"aggregator"}},
 		{ID: "config-only"},
+		{ID: "ready-config", Dependencies: []string{"config-only", "shared"}},
 	}}
 	r := classify(Report{Entries: []Entry{
 		{Name: "foo-entry", Active: true, Descriptor: "foo"},
@@ -335,6 +337,9 @@ func (s *InstalledSuite) TestPackageFreeAndDependencyReadiness() {
 	s.Equal("package-free", r.Applications[4].State)
 	s.False(r.Applications[4].Ready)
 	s.Equal([]string{"partial", "missing"}, r.Applications[4].BlockedBy)
-	s.Equal("package-free", r.Applications[5].State)
-	s.True(r.Applications[5].Ready)
+	s.False(r.Applications[5].Ready, "package-free dependencies propagate missing package readiness")
+	s.Equal([]string{"aggregator"}, r.Applications[5].BlockedBy)
+	s.Equal("package-free", r.Applications[6].State)
+	s.True(r.Applications[6].Ready)
+	s.True(r.Applications[7].Ready, "ready package-free and package-backed dependencies satisfy consumers")
 }

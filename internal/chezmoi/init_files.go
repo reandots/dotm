@@ -41,11 +41,13 @@ func inspectIntegrationFile(path string) (integrationFile, error) {
 		}
 	}
 	for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
-		_, statErr := os.Lstat(parent)
+		info, statErr := os.Lstat(parent)
 		if statErr == nil {
-			info, followErr := os.Stat(parent)
-			if followErr != nil {
-				return file, fmt.Errorf("inspect integration parent %s: %w", parent, followErr)
+			if info.Mode()&os.ModeSymlink != 0 {
+				info, statErr = os.Stat(parent)
+				if statErr != nil {
+					return file, fmt.Errorf("inspect integration parent %s: %w", parent, statErr)
+				}
 			}
 			if !info.IsDir() {
 				return file, fmt.Errorf("integration parent %s is not a directory", parent)

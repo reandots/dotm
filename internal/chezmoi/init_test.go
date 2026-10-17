@@ -141,3 +141,33 @@ func (s *InitIntegrationSuite) TestStaleAndSymlinkTargetsCannotBePublished() {
 	s.Error(snapshot.publish(ctx, []byte("not published")))
 	s.NoFileExists(missing)
 }
+
+func (s *InitIntegrationSuite) TestSymlinkParentPublicationAndRetargeting() {
+	first := filepath.Join(s.root, "first")
+	second := filepath.Join(s.root, "second")
+	for _, dir := range []string{first, second} {
+		s.Require().NoError(os.MkdirAll(dir, 0o700))
+	}
+	parent := filepath.Join(s.root, "parent")
+	s.Require().NoError(os.Symlink(first, parent))
+	path := filepath.Join(parent, "settings")
+	snapshot, err := inspectIntegrationFile(path)
+	s.Require().NoError(err)
+	s.Require().NoError(snapshot.publish(context.Background(), []byte("original")))
+	content, err := os.ReadFile(filepath.Join(first, "settings"))
+	s.Require().NoError(err)
+	s.Equal("original", string(content))
+
+	// Identical file contents must not hide substitution of a symlink ancestor.
+	s.write(filepath.Join(second, "settings"), "original")
+	snapshot, err = inspectIntegrationFile(path)
+	s.Require().NoError(err)
+	s.Require().NoError(os.Remove(parent))
+	s.Require().NoError(os.Symlink(second, parent))
+	s.Error(snapshot.publish(context.Background(), []byte("replacement")))
+	for _, dir := range []string{first, second} {
+		content, err = os.ReadFile(filepath.Join(dir, "settings"))
+		s.Require().NoError(err)
+		s.Equal("original", string(content))
+	}
+}

@@ -314,6 +314,7 @@ func classify(r Report, desired manifest.Resolved) Report {
 		}
 	}
 	wanted := make(map[string]bool)
+	ready := make(map[string]bool, len(desired.Applications))
 	for _, app := range desired.Applications {
 		as := ApplicationStatus{ID: app.ID, State: "installed"}
 		complete, evidence := 0, false
@@ -338,6 +339,9 @@ func classify(r Report, desired manifest.Resolved) Report {
 				complete++
 				evidence = true
 			}
+			if ps.State != "installed" {
+				as.BlockedBy = append(as.BlockedBy, key)
+			}
 			as.Packages = append(as.Packages, ps)
 		}
 		if len(app.Packages) == 0 {
@@ -348,25 +352,15 @@ func classify(r Report, desired manifest.Resolved) Report {
 				as.State = "partial"
 			}
 		}
-		for _, pkg := range as.Packages {
-			if pkg.State != "installed" {
-				as.BlockedBy = append(as.BlockedBy, pkg.Descriptor)
-			}
-		}
-		r.Applications = append(r.Applications, as)
-	}
-	status := make(map[string]*ApplicationStatus, len(r.Applications))
-	for i := range r.Applications {
-		status[r.Applications[i].ID] = &r.Applications[i]
-	}
-	for i := range r.Applications {
-		as := &r.Applications[i]
-		for _, dep := range desired.Applications[i].Dependencies {
-			if ds := status[dep]; ds != nil && !ds.Ready {
+		// Resolved applications are dependency-first, so readiness is available here.
+		for _, dep := range app.Dependencies {
+			if !ready[dep] {
 				as.BlockedBy = append(as.BlockedBy, dep)
 			}
 		}
 		as.Ready = len(as.BlockedBy) == 0
+		ready[app.ID] = as.Ready
+		r.Applications = append(r.Applications, as)
 	}
 	for _, e := range r.Entries {
 		if !e.Active || e.Descriptor == "" || !wanted[e.Descriptor] {

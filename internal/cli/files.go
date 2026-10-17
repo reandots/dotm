@@ -167,14 +167,14 @@ func classifyPolicyError(err error) error {
 	return classifyCheckedOrHostError(err)
 }
 
-func classifyCheckedOrHostError(err error) error {
+func classifyCheckedOrHostError(err error) *installed.OperationError {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrPermission) {
-		return internalError(err)
+		return &installed.OperationError{Severity: installed.SeverityInternal, Err: err}
 	}
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) && !errors.Is(pathErr, os.ErrNotExist) {
-		return internalError(err)
+		return &installed.OperationError{Severity: installed.SeverityInternal, Err: err}
 	}
-	return checkedInputError(err)
+	return &installed.OperationError{Severity: installed.SeverityConfiguration, Err: err}
 }

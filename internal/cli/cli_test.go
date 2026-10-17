@@ -98,6 +98,7 @@ func (s *CLISuite) TestDefaultDataDirectoryKeepsSelectionMachineLocal() {
 			for _, name := range []string{"catalog.toml", "configurations.toml"} {
 				content, err := os.ReadFile(filepath.Join(s.dataDir, name))
 				s.Require().NoError(err)
+				// #nosec G703 -- Private test directory and fixed manifest names, not caller-controlled paths.
 				s.Require().NoError(os.WriteFile(filepath.Join(dataDir, name), content, 0o600))
 			}
 			s.Require().NoError(os.WriteFile(filepath.Join(localDir, "config.toml"),

@@ -26,10 +26,10 @@ func (s *DoctorSuite) TestMissingNixGitAndChezmoiAreIndependentAndReadOnly() {
 	for _, finding := range findings {
 		byCheck[finding.Check] = finding
 	}
-	s.Equal(3, byCheck["nix"].Severity)
-	s.Equal(3, byCheck["chezmoi"].Severity)
+	s.Equal(SeverityInternal, byCheck["nix"].Severity)
+	s.Equal(SeverityInternal, byCheck["chezmoi"].Severity)
 	s.Contains(byCheck["profile"].Message, "absent")
-	s.Equal(3, byCheck["git"].Severity)
+	s.Equal(SeverityInternal, byCheck["git"].Severity)
 	s.NoFileExists(filepath.Join(root, "state", "nix"))
 }
 
@@ -45,7 +45,7 @@ func (s *DoctorSuite) TestRelativeStateHomeIsInputFindingWithoutCreatingProfile(
 			profile = finding
 		}
 	}
-	s.Equal(1, profile.Severity)
+	s.Equal(SeverityConfiguration, profile.Severity)
 	s.Contains(profile.Message, "absolute")
 	s.NoFileExists(filepath.Join(root, "relative-state"))
 }
@@ -62,7 +62,7 @@ func (s *DoctorSuite) TestCorruptManifestIsReportedWithoutNix() {
 	findings, _ := Diagnose(context.Background())
 	for _, finding := range findings {
 		if finding.Check == "profile" {
-			s.Equal(3, finding.Severity)
+			s.Equal(SeverityInternal, finding.Severity)
 			s.Contains(finding.Message, "manifest")
 			return
 		}
@@ -82,7 +82,7 @@ func (s *DoctorSuite) TestDanglingProfileIsNotFirstUse() {
 	findings, _ := Diagnose(context.Background())
 	for _, finding := range findings {
 		if finding.Check == "profile" {
-			s.Equal(3, finding.Severity)
+			s.Equal(SeverityInternal, finding.Severity)
 			s.NotContains(finding.Message, "absent")
 			return
 		}
@@ -160,6 +160,6 @@ esac
 	for _, finding := range findings {
 		byCheck[finding.Check] = finding
 	}
-	s.Equal(3, byCheck["profile-path"].Severity)
-	s.Equal(3, byCheck["profile-data"].Severity)
+	s.Equal(SeverityInternal, byCheck["profile-path"].Severity)
+	s.Equal(SeverityInternal, byCheck["profile-data"].Severity)
 }
