@@ -93,7 +93,7 @@ func Plan(ctx context.Context, options Options) (*Preparation, error) {
 		return nil, err
 	}
 	for _, config := range data.Configs {
-		if config.Configs != nil && strings.ContainsAny(config.Configs.Repository, "\x00\r\n") {
+		if config.Repository != "" && strings.ContainsAny(config.Repository, "\x00\r\n") {
 			return nil, fmt.Errorf("%s: configuration %q: invalid source repository", paths[1], config.Name)
 		}
 	}
@@ -132,8 +132,8 @@ func Plan(ctx context.Context, options Options) (*Preparation, error) {
 		return nil, fmt.Errorf("unknown configuration %q; select an existing --configuration", name)
 	}
 	repository := options.Repository
-	if repository == "" && config.Configs != nil {
-		repository = config.Configs.Repository
+	if repository == "" {
+		repository = config.Repository
 	}
 	if repository == "" {
 		source, sourceErr := chezmoi.SourcePath()
@@ -163,17 +163,13 @@ func Plan(ctx context.Context, options Options) (*Preparation, error) {
 		configurations, err = toml.Marshal(struct {
 			Configurations []manifest.Configuration `toml:"configurations"`
 		}{[]manifest.Configuration{{
-			Name: name, Apps: []string{},
-			Configs: &manifest.ConfigurationSource{Backend: "chezmoi", Repository: repository},
+			Name: name, Apps: []string{}, Backend: "chezmoi", Repository: repository,
 		}}})
-	} else if config.Configs == nil || config.Configs.Repository != repository {
+	} else if config.Backend != "chezmoi" || config.Repository != repository {
 		configurations, err = editSource(configurations, name, repository)
-		before := ""
-		if config.Configs != nil {
-			before = config.Configs.Repository
-		}
+		before := config.Repository
 		p.conflicts = append(p.conflicts, Conflict{
-			Path: paths[1], Field: "configs.repository", Before: before, After: repository,
+			Path: paths[1], Field: "repository", Before: before, After: repository,
 		})
 	}
 	if err != nil {

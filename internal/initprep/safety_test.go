@@ -19,8 +19,8 @@ func (s *PreparationSuite) TestEveryPartialFileCombination() {
 			inputs := []struct{ path, content string }{
 				{filepath.Join(dataDir, "catalog.toml"), "# existing catalog\n[tool]\nnix = ['vim']\n"},
 				{filepath.Join(dataDir, "configurations.toml"), "# existing configuration\n" +
-					"[[configurations]]\nname = 'machine'\napps = []\n" +
-					"[configurations.configs]\nbackend = 'chezmoi'\nrepository = 'https://example.invalid/dots.git'\n"},
+					"[[configurations]]\nname = 'machine'\napps = []\nbackend = 'chezmoi'\n" +
+					"repository = 'https://example.invalid/dots.git'\n"},
 				{filepath.Join(local, "config.toml"), "# existing selection\nconfiguration = 'machine'\n"},
 				{filepath.Join(local, "files.toml"), "# existing declarations\n[unmanaged]\n"},
 			}

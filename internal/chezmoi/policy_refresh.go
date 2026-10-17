@@ -15,7 +15,7 @@ import (
 // Call it after configuration pre-hooks so their local declaration changes are visible.
 func PolicyInputFor(data *manifest.Data, config manifest.Configuration, selectionPath string) (PolicyInput, error) {
 	input := PolicyInput{
-		Repository: config.Configs.Repository, Configuration: config.Name, SelectionPath: selectionPath,
+		Repository: config.Repository, Configuration: config.Name, SelectionPath: selectionPath,
 	}
 	filesPath, err := manifest.FilesPath()
 	if err != nil {

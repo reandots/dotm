@@ -190,7 +190,8 @@ func configure(
 				failureSeverity = SeverityInternal
 			} else {
 				input, globalErr = chezmoi.PolicyInputFor(options.Data, manifest.Configuration{
-					Name: options.Configuration, Apps: desiredApplicationIDs(desired), Configs: options.Source,
+					Name: options.Configuration, Apps: desiredApplicationIDs(desired),
+					Backend: options.Source.Backend, Repository: options.Source.Repository,
 				}, options.SelectionPath)
 				if globalErr == nil {
 					result.Policy, globalErr = chezmoi.RefreshPolicy(ctx, result.Source.Path, input)

@@ -254,8 +254,8 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 		for _, target := range resolved.Targets {
 			fmt.Fprintf(out, "  %s: %s\n", target.Path, list(target.Applications))
 		}
-		if config.Configs != nil {
-			fmt.Fprintf(out, "Configuration source: %s %s\n", config.Configs.Backend, config.Configs.Repository)
+		if config.Backend != "" {
+			fmt.Fprintf(out, "Configuration source: %s %s\n", config.Backend, config.Repository)
 		}
 	}
 	return nil
@@ -285,8 +285,11 @@ func (app *cli) runOperations(
 	defer release()
 	var failures []error
 	options := installed.ConfigurationOptions{
-		Source: config.Configs, ConfirmReplacement: confirmReplacement(in, stderr),
-		Data: data, Configuration: config.Name, SelectionPath: selectionPath,
+		ConfirmReplacement: confirmReplacement(in, stderr),
+		Data:               data, Configuration: config.Name, SelectionPath: selectionPath,
+	}
+	if config.Backend != "" {
+		options.Source = &manifest.ConfigurationSource{Backend: config.Backend, Repository: config.Repository}
 	}
 	for _, step := range steps {
 		if !step.requested {

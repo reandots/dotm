@@ -69,7 +69,6 @@ Across the **whole catalog**, equal/nested `configs` ownership between applicati
 [[configurations]]
 name = "laptop"
 apps = ["workspace"]
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://example.invalid/my-dotfiles.git"
 
@@ -82,7 +81,7 @@ name = "empty"
 apps = []
 ```
 
-Use a unique name and an explicit application list (which may be empty). Application IDs must exist. If the selection's dependency closure includes any `configs` targets, its `configs` settings must specify `backend = "chezmoi"` and a nonempty real Git repository URL. Do not invent a URL. Package-only/empty selections need no backend settings. Settings are per named configuration, not in local `config.toml`. All configurations share one local source checkout, so URL switches can require protected replacement. Empty selections never request deletion or unscoped file application.
+Use a unique name and an explicit application list (which may be empty). Application IDs must exist. If the selection's dependency closure includes any `configs` targets, its `[[configurations]]` entry must set `backend = "chezmoi"` and a nonblank real Git repository URL as flat fields alongside `name` and `apps`. Do not invent a URL. Package-only/empty selections may omit both. Any nonempty source requires the valid pair; the old nested `[configurations.configs]` schema is rejected. Settings are per named configuration, not in local `config.toml`. All configurations share one local source checkout, so URL switches can require protected replacement. Empty selections never request deletion or unscoped file application.
 
 ## Local config.toml
 

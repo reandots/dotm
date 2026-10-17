@@ -58,7 +58,6 @@ Across the **entire catalog**, applications cannot own equal/nested `configs`, a
 [[configurations]]
 name = "laptop"
 apps = ["workspace"]
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://example.invalid/my-dotfiles.git"
 
@@ -71,7 +70,7 @@ name = "empty"
 apps = []
 ```
 
-Replace the fictional repository with your real Git URL. Every selection whose dependency closure includes configuration targets requires `backend = "chezmoi"` and a nonempty `repository`. Source settings belong to each named configuration, not the local selection. Package-only/empty selections need no source. All selections share one local source checkout: choosing a different URL can trigger protected source replacement. An empty set never implies deletion or unscoped apply.
+Replace the fictional repository with your real Git URL. Put `backend` and `repository` directly in each `[[configurations]]` entry alongside `name` and `apps`; the former nested `[configurations.configs]` form is rejected. Every selection whose dependency closure includes configuration targets requires the pair `backend = "chezmoi"` and a nonblank `repository`. Package-only/empty selections may omit both, but any nonempty source setting requires the valid pair. Source settings belong to each named configuration, not the local selection. All selections share one local source checkout: choosing a different URL can trigger protected source replacement. An empty set never implies deletion or unscoped apply.
 
 ## Local selection: config.toml
 

@@ -32,9 +32,10 @@ type Application struct {
 }
 
 type Configuration struct {
-	Name    string               `toml:"name"`
-	Apps    []string             `toml:"apps"`
-	Configs *ConfigurationSource `toml:"configs"`
+	Name       string   `toml:"name"`
+	Apps       []string `toml:"apps"`
+	Backend    string   `toml:"backend,omitempty"`
+	Repository string   `toml:"repository,omitempty"`
 }
 
 type ConfigurationSource struct {
@@ -216,9 +217,9 @@ func load(dir string, readFile func(string) ([]byte, error)) (*Data, error) {
 		if err := checkReferences("configuration "+config.Name, config.Apps, d.Apps); err != nil {
 			return nil, fmt.Errorf("%s: %w", configPath, err)
 		}
-		if config.Configs != nil {
-			if config.Configs.Backend != "chezmoi" || strings.TrimSpace(config.Configs.Repository) == "" {
-				return nil, fmt.Errorf("%s: configuration %q: configs requires backend 'chezmoi' and a repository",
+		if config.Backend != "" || config.Repository != "" {
+			if config.Backend != "chezmoi" || strings.TrimSpace(config.Repository) == "" {
+				return nil, fmt.Errorf("%s: configuration %q: source requires backend 'chezmoi' and a repository",
 					configPath, config.Name)
 			}
 		}
@@ -226,8 +227,8 @@ func load(dir string, readFile func(string) ([]byte, error)) (*Data, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: configuration %q: %w", configPath, config.Name, err)
 		}
-		if len(resolved.Targets) > 0 && config.Configs == nil {
-			return nil, fmt.Errorf("%s: configuration %q: config targets require configs source settings",
+		if len(resolved.Targets) > 0 && config.Backend == "" {
+			return nil, fmt.Errorf("%s: configuration %q: config targets require backend and repository",
 				configPath, config.Name)
 		}
 		d.Configs[config.Name] = config

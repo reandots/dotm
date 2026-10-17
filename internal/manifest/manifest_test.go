@@ -95,14 +95,18 @@ func (s *ManifestSuite) TestInvalidManifests() {
 		{"wrong config target type", app + "configs = [42]\n", config},
 		{"relative config target", app + "configs = ['relative']\n", config},
 		{"targets without source", app + "configs = ['/tmp/config']\n", config},
-		{"unknown source backend", app, config + "[configurations.configs]\nbackend = 'other'\nrepository = 'repo'\n"},
-		{"missing source repository", app, config + "[configurations.configs]\nbackend = 'chezmoi'\n"},
+		{"unknown source backend", app, config + "backend = 'other'\nrepository = 'repo'\n"},
+		{"missing source repository", app, config + "backend = 'chezmoi'\n"},
+		{"missing source backend", app, config + "repository = 'repo'\n"},
+		{"blank source repository", app, config + "backend = 'chezmoi'\nrepository = '  '\n"},
+		{"legacy nested source", app, config + "[configurations.configs]\nbackend = 'chezmoi'\nrepository = 'repo'\n"},
 		{"wrong source type", app, config + "configs = 'repo'\n"},
-		{"wrong repository type", app, config + "[configurations.configs]\nbackend = 'chezmoi'\nrepository = 42\n"},
+		{"wrong repository type", app, config + "backend = 'chezmoi'\nrepository = 42\n"},
+		{"wrong backend type", app, config + "backend = 42\nrepository = 'repo'\n"},
 		{
 			"unknown source key",
 			app,
-			config + "[configurations.configs]\nbackend = 'chezmoi'\nrepository = 'r'\nextra = 1\n",
+			config + "backend = 'chezmoi'\nrepository = 'r'\nextra = 1\n",
 		},
 		{"shell command hook table", app + "pre_hook = {command = 'echo hi'}\n", config},
 	}
@@ -145,14 +149,13 @@ nix = ["hello"]
 `, `[[configurations]]
 name = "machine"
 apps = ["root", "shared"]
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://example.invalid/dotfiles.git"
 `))
 	s.Require().NoError(err)
 	config := d.Configs["machine"]
-	s.Equal("chezmoi", config.Configs.Backend)
-	s.Equal("https://example.invalid/dotfiles.git", config.Configs.Repository)
+	s.Equal("chezmoi", config.Backend)
+	s.Equal("https://example.invalid/dotfiles.git", config.Repository)
 	resolved, err := d.Resolve(config.Apps)
 	s.Require().NoError(err)
 	var ids []string
@@ -183,5 +186,4 @@ apps = ["a"]
 `))
 	s.Require().Error(err)
 	s.Contains(err.Error(), `configuration "unselected"`)
-	s.Contains(err.Error(), "source settings")
 }

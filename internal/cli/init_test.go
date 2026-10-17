@@ -91,6 +91,8 @@ func (s *InitCLISuite) TestSetupRepeatPreservesDirtySourceAndDoesNotDeploy() {
 	selected, selectionErr := data.Selection(selectionPath)
 	s.Require().NoError(selectionErr)
 	s.Empty(selected.Apps, "external backend reuse must not add a managed application")
+	s.Equal("chezmoi", selected.Backend)
+	s.Equal(s.remote, selected.Repository)
 	ignore := filepath.Join(s.source, ".chezmoiignore")
 	first, err := os.ReadFile(ignore)
 	s.Require().NoError(err)
@@ -124,8 +126,8 @@ func (s *InitCLISuite) TestSetupRepeatPreservesDirtySourceAndDoesNotDeploy() {
 func (s *InitCLISuite) TestApprovalsBeforeWritesAndNoYesBypass() {
 	s.write(filepath.Join(s.data, "catalog.toml"), "")
 	s.write(filepath.Join(s.data, "configurations.toml"), "[[configurations]]\nname='old'\napps=[]\n"+
-		"[configurations.configs]\nbackend='chezmoi'\nrepository="+strconvQuote(s.remote)+"\n"+
-		"[[configurations]]\nname='work'\napps=[]\n[configurations.configs]\n"+
+		"backend='chezmoi'\nrepository="+strconvQuote(s.remote)+"\n"+
+		"[[configurations]]\nname='work'\napps=[]\n"+
 		"backend='chezmoi'\nrepository='old-repository'\n")
 	selection := filepath.Join(s.config, "dotm", "config.toml")
 	s.write(selection, "configuration='old'\n")

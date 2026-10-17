@@ -50,7 +50,6 @@ func (s *PreparationSuite) TestResolutionPriorityAndSingleton() {
 	s.write(configurations, `[[configurations]]
 name = "one"
 apps = []
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://one.invalid/dots.git"
 `, 0o600)
@@ -62,13 +61,11 @@ repository = "https://one.invalid/dots.git"
 	s.write(configurations, `[[configurations]]
 name = "one"
 apps = []
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://one.invalid/dots.git"
 [[configurations]]
 name = "local-choice"
 apps = []
-[configurations.configs]
 backend = "chezmoi"
 repository = "https://local.invalid/dots.git"
 `, 0o600)
@@ -129,7 +126,6 @@ func (s *PreparationSuite) TestRefusalAndEOFDoNotWrite() {
 	s.write(filepath.Join(s.data, "configurations.toml"), `[[configurations]]
 name="machine"
 apps=[]
-[configurations.configs]
 backend="chezmoi"
 repository="https://old.invalid/dots.git"
 `, 0o600)
@@ -171,7 +167,6 @@ func (s *PreparationSuite) TestExistingApplicationsContentAndModesPreserved() {
 	configurations := `[[configurations]]
 name="machine"
 apps=["editor"]
-[configurations.configs]
 backend="chezmoi"
 repository="https://old.invalid/dots.git"
 `
@@ -248,26 +243,25 @@ func (s *PreparationSuite) TestTargetedRepositoryEditsPreserveTOMLForms() {
 		preserve    []string
 	}{
 		{
-			name: "inline array and inline configs",
+			name: "inline configuration array",
 			input: "# preserve leading comment\n" +
 				"configurations = [{ name = \"machine\", apps = [\"editor\"], " +
-				"configs = { backend = \"chezmoi\", repository = " +
-				"\"https://old.invalid/dots.git\" } }]\n",
+				"backend = \"chezmoi\", repository = \"https://old.invalid/dots.git\" }]\n",
 			preserve: []string{"# preserve leading comment", "apps = [\"editor\"]", "backend = \"chezmoi\""},
 		},
 		{
-			name: "dotted source keys",
+			name: "flat source fields",
 			input: `[[configurations]]
 name="machine"
 apps=["editor"]
-configs.backend="chezmoi"
-configs.repository="https://old.invalid/dots.git"
+backend="chezmoi"
+repository="https://old.invalid/dots.git"
 # retain trailing note
 `,
-			preserve: []string{"apps=[\"editor\"]", "# retain trailing note", "configs.backend=\"chezmoi\""},
+			preserve: []string{"apps=[\"editor\"]", "# retain trailing note", "backend=\"chezmoi\""},
 		},
 		{
-			name:     "add absent source table",
+			name:     "add absent source fields",
 			input:    "[[configurations]]\nname=\"machine\"\napps=[\"editor\"]\n# keep unrelated comment\n",
 			preserve: []string{"apps=[\"editor\"]", "# keep unrelated comment"},
 		},
@@ -281,11 +275,43 @@ configs.repository="https://old.invalid/dots.git"
 			input: `[[configurations]]
 name="machine"
 apps=["editor"]
-[configurations.configs]
 backend="chezmoi"
 repository="""https://old.invalid/dots.git"""
 `,
 			preserve: []string{"apps=[\"editor\"]", "backend=\"chezmoi\""},
+		},
+		{
+			name: "edit only selected profile",
+			input: "# shared profiles\n[[configurations]]\nname='other'\napps=[]\n" +
+				"backend='chezmoi'\nrepository='https://other.invalid/dots.git' # retain other\n" +
+				"[[configurations]]\nname='machine'\napps=['editor']\n" +
+				"backend='chezmoi'\nrepository='https://old.invalid/dots.git' # retain selected\n" +
+				"[[configurations]]\nname='last'\napps=[] # retain last\n",
+			preserve: []string{
+				"# shared profiles", "repository='https://other.invalid/dots.git' # retain other",
+				"apps=['editor']", "# retain selected", "name='last'\napps=[] # retain last",
+			},
+		},
+		{
+			name: "add source only to selected profile",
+			input: "[[configurations]]\nname='machine'\napps=['editor'] # selected apps\n" +
+				"[[configurations]]\nname='other'\napps=[]\n" +
+				"backend='chezmoi'\nrepository='https://other.invalid/dots.git' # untouched\n",
+			preserve: []string{
+				"apps=['editor'] # selected apps",
+				"name='other'\napps=[]\nbackend='chezmoi'\nrepository='https://other.invalid/dots.git' # untouched",
+			},
+		},
+		{
+			name: "fill empty source fields",
+			input: "[[configurations]]\nname='machine'\napps=['editor']\n" +
+				"repository='' # keep repository comment\nbackend='' # keep backend comment\n",
+			preserve: []string{"# keep repository comment", "# keep backend comment", "apps=['editor']"},
+		},
+		{
+			name:     "fill empty inline backend",
+			input:    "configurations = [{name='machine', apps=['editor'], backend=''}]\n",
+			preserve: []string{"apps=['editor']"},
 		},
 	}
 	for _, tc := range cases {
@@ -364,7 +390,6 @@ func (s *PreparationSuite) TestLateWriteFailureReportsCompletedEffects() {
 	s.write(configurationsPath, `[[configurations]]
 name="machine"
 apps=[]
-[configurations.configs]
 backend="chezmoi"
 repository="https://old.invalid/dots.git"
 `, 0o600)
@@ -410,7 +435,6 @@ func (s *PreparationSuite) TestCallbackErrorDoesNotWrite() {
 	s.write(filepath.Join(s.data, "configurations.toml"), `[[configurations]]
 name="machine"
 apps=[]
-[configurations.configs]
 backend="chezmoi"
 repository="https://old.invalid/dots.git"
 `, 0o600)
@@ -429,7 +453,6 @@ func (s *PreparationSuite) TestNilAndCanceledConfirmationDoNotWrite() {
 	s.write(configs, `[[configurations]]
 name="machine"
 apps=[]
-[configurations.configs]
 backend="chezmoi"
 repository="https://old.invalid/dots.git"
 `, 0o600)

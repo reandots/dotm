@@ -85,10 +85,11 @@ func editSource(content []byte, name, repository string) ([]byte, error) {
 		return nil, err
 	}
 	selected := -1
-	var hasSource bool
+	backend := ""
 	for i, config := range document.Configurations {
 		if config.Name == name {
-			selected, hasSource = i, config.Configs != nil
+			selected = i
+			backend = config.Backend
 			break
 		}
 	}
@@ -97,6 +98,18 @@ func editSource(content []byte, name, repository string) ([]byte, error) {
 	index, insert := -1, -1
 	section := ""
 	active := false
+	fields := [2]string{"backend", "repository"}
+	values := [2]string{"chezmoi", repository}
+	var ranges [2]unstable.Range
+	var found [2]bool
+	inline := false
+	capture := func(node *unstable.Node, prefix string) {
+		for i, field := range fields {
+			if at, ok := stringRange(node, prefix, field); ok {
+				ranges[i], found[i] = at, true
+			}
+		}
+	}
 	for parser.NextExpression() {
 		node := parser.Expression()
 		switch node.Kind {
@@ -128,32 +141,47 @@ func editSource(content []byte, name, repository string) ([]byte, error) {
 						continue
 					}
 					config := children.Node()
-					if at, ok := stringRange(config, "", "configs.repository"); ok {
-						return replace(content, at, quote(repository)), nil
-					}
-					if !hasSource {
-						return replace(content, unstable.Range{Offset: config.Raw.Offset + 1},
-							"configs = {backend = 'chezmoi', repository = "+quote(repository)+"}, "), nil
-					}
+					capture(config, "")
+					insert, inline = int(config.Raw.Offset)+1, true
 				}
 			}
 			if active {
-				if at, ok := stringRange(node, section, "configs.repository"); ok {
-					return replace(content, at, quote(repository)), nil
-				}
+				capture(node, section)
 			}
 		}
 	}
 	if parser.Error() != nil {
 		return nil, parser.Error()
 	}
-	if !hasSource && insert >= 0 {
-		prefix := ""
-		if insert == len(content) && (insert == 0 || content[insert-1] != '\n') {
-			prefix = "\n"
-		}
-		return replace(content, unstable.Range{Offset: uint32(insert)},
-			prefix+"configs = {backend = 'chezmoi', repository = "+quote(repository)+"}\n"), nil
+	if insert < 0 {
+		return nil, fmt.Errorf("cannot locate validated source settings for configuration %q", name)
 	}
-	return nil, fmt.Errorf("cannot locate validated source settings for configuration %q", name)
+	// Replace later scalars first so earlier offsets remain valid.
+	order := [2]int{0, 1}
+	if ranges[0].Offset < ranges[1].Offset {
+		order = [2]int{1, 0}
+	}
+	for _, i := range order {
+		if found[i] && (i != 0 || backend != "chezmoi") {
+			content = replace(content, ranges[i], quote(values[i]))
+		}
+	}
+	addition := ""
+	for i, field := range fields {
+		if !found[i] {
+			addition += field + " = " + quote(values[i])
+			if inline {
+				addition += ", "
+			} else {
+				addition += "\n"
+			}
+		}
+	}
+	if addition != "" {
+		if !inline && insert == len(content) && content[insert-1] != '\n' {
+			addition = "\n" + addition
+		}
+		content = replace(content, unstable.Range{Offset: uint32(insert)}, addition)
+	}
+	return content, nil
 }

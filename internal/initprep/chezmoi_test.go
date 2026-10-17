@@ -19,8 +19,8 @@ func (s *PreparationSuite) TestPlanChezmoiPreservesTOMLFormsAndAddsMembership() 
 		{"inline-array", "configurations = [{ name = 'machine', apps = [] }] # keep\n"},
 		{"array-table-nonempty", "[[configurations]]\nname='machine' # keep\napps=['other']\n"},
 		{"array-table-empty-comment", "[[configurations]]\nname='machine' # keep\napps=[ # preserve\n]\n"},
-		{"array-table-nested-source", "[[configurations]]\nname='machine' # keep\n" +
-			"[configurations.configs]\nbackend='chezmoi'\nrepository='repo'\n"},
+		{"array-table-flat-source", "[[configurations]]\nname='machine' # keep\n" +
+			"backend='chezmoi'\nrepository='repo'\n"},
 	} {
 		s.Run(tc.name, func() {
 			s.write(filepath.Join(s.data, "catalog.toml"), "# catalog\n[other]\nnix = ['hello'] # keep\n", 0o600)

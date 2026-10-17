@@ -143,7 +143,7 @@ func runDoctor(dataDir string, out io.Writer) error {
 	var input chezmoi.PolicyInput
 	var model manifest.FileModel
 	var filesErr error
-	if config.Configs != nil {
+	if config.Backend != "" {
 		input, filesErr = chezmoi.PolicyInputFor(data, config, selectionPath)
 		model = input.Files
 	} else {
@@ -157,7 +157,7 @@ func runDoctor(dataDir string, out io.Writer) error {
 	if !r.check("declaration inputs", filesErr, "Correct local files.toml or its access permissions") {
 		declarationsReady = false
 	}
-	if config.Configs == nil {
+	if config.Backend == "" {
 		r.finding(installed.DoctorFinding{
 			Check: "configuration source", Severity: 1,
 			Message: "selected configuration has no chezmoi source",
@@ -165,9 +165,9 @@ func runDoctor(dataDir string, out io.Writer) error {
 		})
 	}
 	repositoryReady := false
-	if passiveReady && gitReady && config.Configs != nil {
+	if passiveReady && gitReady && config.Backend != "" {
 		repositoryReady = r.check("source repository",
-			chezmoi.ValidateRepository(ctx, source, config.Configs.Repository),
+			chezmoi.ValidateRepository(ctx, source, config.Repository),
 			"Correct source identity explicitly; use dotm init for approved source acquisition or replacement")
 	} else {
 		r.blocked("source repository", "safe source, operational Git and configured repository are required")
@@ -185,7 +185,7 @@ func runDoctor(dataDir string, out io.Writer) error {
 	if !declarationsReady {
 		reasons = append(reasons, "declarations are invalid")
 	}
-	if config.Configs == nil {
+	if config.Backend == "" {
 		reasons = append(reasons, "no configured source")
 	}
 	if !repositoryReady {

@@ -172,7 +172,7 @@ func strconvQuote(value string) string {
 
 func configurationManifest(repository, applications string) string {
 	return "[[configurations]]\nname = \"work\"\napps = " + applications +
-		"\n[configurations.configs]\nbackend = \"chezmoi\"\nrepository = " +
+		"\nbackend = \"chezmoi\"\nrepository = " +
 		strconvQuote(repository) + "\n"
 }
 

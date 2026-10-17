@@ -26,7 +26,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	if err != nil {
 		return classifyCheckedOrHostError(err)
 	}
-	if config.Configs == nil || config.Configs.Backend != "chezmoi" {
+	if config.Backend != "chezmoi" {
 		return checkedInputError(errors.New("selected configuration requires a configured chezmoi source"))
 	}
 	updateSource := command == "files refresh" && options.Refresh.UpdateSource
@@ -57,7 +57,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 			return internalError(err)
 		}
 		if command == "files refresh" && updateSource {
-			if _, err = chezmoi.SyncSource(ctx, config.Configs.Repository, confirmReplacement(in, stderr)); err != nil {
+			if _, err = chezmoi.SyncSource(ctx, config.Repository, confirmReplacement(in, stderr)); err != nil {
 				return classifyAcquisitionError(err)
 			}
 		}
@@ -66,7 +66,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 	if err = errors.Join(validation.Err(), err); err != nil {
 		return classifyCheckedOrHostError(err)
 	}
-	if err = chezmoi.ValidateRepository(ctx, source, config.Configs.Repository); err != nil {
+	if err = chezmoi.ValidateRepository(ctx, source, config.Repository); err != nil {
 		return classifyPolicyError(err)
 	}
 	if command == "files lint" {
