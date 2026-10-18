@@ -85,8 +85,8 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		if err = errors.Join(model.Err(), checkErr); err != nil {
 			return classifyPolicyError(err)
 		}
-		_, err = fmt.Fprint(out, "Files policy: valid\n"+
-			"Publication: existing policy checked; no publication performed\n")
+		_, err = fmt.Fprintf(out, "%s\nPublication: existing policy checked; no publication performed\n",
+			colored(out, "Files policy: valid", green))
 		if err != nil {
 			return internalError(err)
 		}
@@ -113,7 +113,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		warnings := hasFileWarnings(files) || hasFileWarnings(effective)
 		return printFilesStatus(out, inventory, warnings)
 	}
-	_, err = fmt.Fprint(out, "Files policy: valid\nPublication: refreshed and verified\n")
+	_, err = fmt.Fprintf(out, "%s\nPublication: refreshed and verified\n", colored(out, "Files policy: valid", green))
 	if err != nil {
 		return internalError(err)
 	}
@@ -135,7 +135,7 @@ func printFileDiagnostics(out io.Writer, model manifest.FileModel) error {
 		if diagnostic.Severity != manifest.FileWarning {
 			continue
 		}
-		if _, err := fmt.Fprintln(out, diagnostic); err != nil {
+		if _, err := fmt.Fprintln(out, colored(out, diagnostic.String(), yellow)); err != nil {
 			return err
 		}
 	}

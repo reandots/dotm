@@ -34,7 +34,11 @@ func (r *doctorReport) finding(f installed.DoctorFinding) {
 	if f.Blocked {
 		label = "blocked"
 	}
-	fmt.Fprintf(r.out, "%s: %s\n", label, text)
+	shade := green
+	if f.Blocked {
+		shade = yellow
+	}
+	fmt.Fprintf(r.out, "%s: %s\n", colored(r.out, label, shade), text)
 }
 
 func (r *doctorReport) check(name string, err error, remedy string) bool {

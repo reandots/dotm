@@ -21,6 +21,8 @@ For a missing, malformed, or stale regular policy file, `files refresh` can rege
 
 Start broad read-only diagnosis with `dotm doctor` (use the actual `--data-dir` when nondefault). It preserves independent findings even when manifests or a backend fail and explicitly labels dependency-blocked checks. It uses exit 0/1/3 with maximum severity; a missing backend is not a successful policy check. Current-process PATH/XDG findings do not prove fresh-login or desktop integration. Effective policy checks execute trusted templates; there is no repair mode.
 
+Use `status --verbose` for the detailed installed-entry report; ordinary status/lifecycle output is concise. `-v` / `--verbose` changes reporting only, not mutation scope or safety. Do not repeat an install/update merely to obtain more output without considering repeated hooks and retained earlier effects. Terminal colors are supplementary and disabled by `NO_COLOR` or redirection.
+
 ## Common diagnostics
 
 | Symptom | Action |
@@ -38,6 +40,10 @@ Start broad read-only diagnosis with `dotm doctor` (use the actual `--data-dir` 
 | Path outside destination or custom XDG mapping error | Provide compatible chezmoi source layout/destination; declaration expansion does not remap source entries |
 
 Do not delete user data, generated sources, journals, or generations to force progress. Avoid external native profile/source mutations while dotm runs.
+
+### Source has local changes after init
+
+`init` can add the owned policy block to `.chezmoiignore` and explicitly asks you to review and commit the checkout diff. The next source-synchronizing command refuses a dirty checkout instead of discarding it. The refusal names the repository and quotes blocking changed, untracked, or ignored paths; empty untracked directories are also reported. Intended source changes belong in a user-reviewed commit. Move unrelated local data outside the checkout; Git cannot preserve empty directories in a commit. Do not run `git clean` or `reset --hard` as a shortcut. Local `files refresh` without `--update-source` does not fetch or impose the acquisition cleanliness gate.
 
 ## Package update recovery
 

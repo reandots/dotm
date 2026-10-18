@@ -80,6 +80,10 @@ func (s *InitCLISuite) run(input string, args ...string) (string, error) {
 func (s *InitCLISuite) TestSetupRepeatPreservesDirtySourceAndDoesNotDeploy() {
 	output, err := s.run("", "init", "--configuration", "work", "--repository", s.remote)
 	s.Require().NoError(err, output)
+	s.Contains(output, ".chezmoiignore")
+	s.Contains(output, "commit intended source changes yourself before install")
+	s.Contains(output, "files refresh --update-source")
+	s.NotContains(output, "Chezmoi executable:")
 	s.FileExists(filepath.Join(s.state, "dotm", "chezmoi-policy.json"))
 	s.NoFileExists(filepath.Join(s.home, ".init-destination"))
 	s.NoDirExists(filepath.Join(s.state, "nix"))
@@ -121,6 +125,11 @@ func (s *InitCLISuite) TestSetupRepeatPreservesDirtySourceAndDoesNotDeploy() {
 	repeated, err := os.ReadFile(ignore)
 	s.Require().NoError(err)
 	s.Equal(first, repeated)
+	// Recreating local settings alone must not be described as another checkout edit.
+	s.Require().NoError(os.Remove(filepath.Join(s.config, "chezmoi", "chezmoi.toml")))
+	output, err = s.run("", "init")
+	s.Require().NoError(err, output)
+	s.NotContains(output, "Action required:")
 }
 
 func (s *InitCLISuite) TestApprovalsBeforeWritesAndNoYesBypass() {
@@ -194,4 +203,18 @@ func (s *InitCLISuite) TestInitDoesNotReplacePolicySymlink() {
 	retained, err := os.ReadFile(target)
 	s.Require().NoError(err)
 	s.Equal(content, retained)
+}
+
+func (s *InitCLISuite) TestLateFailureRetainsSourceEditReminder() {
+	s.write(filepath.Join(s.remote, "dot_broken.tmpl"), "{{ fail \"fixture template failure\" }}\n")
+	s.git("-C", s.remote, "add", "--all")
+	s.git("-C", s.remote, "-c", "user.name=Init Test", "-c", "user.email=init@example.invalid",
+		"commit", "--quiet", "-m", "broken template fixture")
+	output, err := s.run("", "init", "--configuration", "work", "--repository", s.remote)
+	s.Require().Error(err)
+	s.Contains(output, "commit intended source changes yourself before install")
+	s.Contains(output, ".chezmoiignore")
+	s.NotContains(output, "Init complete")
+	s.FileExists(filepath.Join(s.source, ".chezmoiignore"))
+	s.NoFileExists(filepath.Join(s.home, ".broken"))
 }

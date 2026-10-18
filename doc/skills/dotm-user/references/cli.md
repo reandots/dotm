@@ -2,6 +2,8 @@
 
 Assume `dotm` is already installed and available on PATH; invoke it directly as `dotm`. `dotm --help` and `dotm <command> --help` describe installed syntax. Long options use `--` and can precede/follow commands. Use the same `--data-dir /actual/shared/data` on every command when nondefault; this never relocates local selection/exclusions.
 
+Package status and lifecycle output is concise by default. Global `-v` / `--verbose` before or after the command exposes detailed Nix entries, URLs/store paths, and lifecycle stages (`dotm status --verbose`, `dotm -v install`, `dotm -viur`). Installed state is not evidence of a new installation during that invocation, and readiness is not configuration synchronization. Warnings, failures, blockers, backups, and native/hook diagnostics remain visible without verbosity. Color is terminal-only and respects `NO_COLOR`; redirected output is plain.
+
 ## Choose a command
 
 | Command | Effect and prerequisites |

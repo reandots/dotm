@@ -119,3 +119,42 @@ func (s *CLISuite) TestExplicitDataDirectoryDoesNotRequireValidXDGForListing() {
 	s.ErrorContains(cli.Run([]string{"configs"}, strings.NewReader(""), io.Discard, io.Discard),
 		"configuration directory must be absolute")
 }
+
+func (s *CLISuite) TestVerbosityKeepsReadinessVisibleWithoutBackendDump() {
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dataDir, "catalog.toml"),
+		[]byte("[dependency]\nnix=['fd']\n[consumer]\ndependencies=['dependency']\n"), 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dataDir, "configurations.toml"),
+		[]byte("[[configurations]]\nname='empty'\napps=['consumer']\n"), 0o600))
+	for _, args := range [][]string{{"status"}, {"-v", "status"}, {"status", "--verbose"}} {
+		var output bytes.Buffer
+		invocation := append([]string{"--data-dir", s.dataDir}, args...)
+		s.Require().NoError(cli.Run(invocation, strings.NewReader(""), &output, io.Discard))
+		text := output.String()
+		s.Contains(text, "dependency")
+		s.Contains(text, "missing")
+		s.Contains(text, "blocked by dependency")
+		s.NotContains(text, "\x1b[")
+		if len(args) == 1 {
+			s.NotContains(text, "Installed profile:")
+			s.NotContains(text, "Installed entries:")
+		} else {
+			s.Contains(text, "Installed profile:")
+			s.Contains(text, "Installed entries:")
+		}
+	}
+}
+
+func (s *CLISuite) TestVerboseCombinedFlagsPreserveOperationOrder() {
+	var output, diagnostics bytes.Buffer
+	err := cli.Run([]string{"--data-dir", s.dataDir, "-viur"},
+		strings.NewReader(""), &output, &diagnostics)
+	s.Require().NoError(err)
+	s.Contains(output.String(), "Installed profile:")
+	text := diagnostics.String()
+	update := strings.Index(text, "Operation: update")
+	install := strings.Index(text, "Operation: install")
+	remove := strings.Index(text, "Operation: remove-extras")
+	s.GreaterOrEqual(update, 0)
+	s.Greater(install, update)
+	s.Greater(remove, install)
+}

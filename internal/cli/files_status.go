@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
+	"unsafe"
 
 	"dotm/internal/chezmoi"
 )
@@ -133,7 +135,7 @@ func statusLabel(state byte) string {
 }
 
 func statusColor(out io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
+	if _, disabled := os.LookupEnv("NO_COLOR"); disabled || os.Getenv("TERM") == "dumb" {
 		return false
 	}
 	writer, ok := out.(*checkedWriter)
@@ -144,11 +146,14 @@ func statusColor(out io.Writer) bool {
 	if !ok {
 		return false
 	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	var terminal syscall.Termios
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), syscall.TCGETS,
+		uintptr(unsafe.Pointer(&terminal)))
+	return errno == 0
 }
 
 const (
+	green  = "\x1b[1;32m"
 	yellow = "\x1b[1;33m"
 	red    = "\x1b[1;31m"
 	reset  = "\x1b[0m"

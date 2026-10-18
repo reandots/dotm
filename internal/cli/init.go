@@ -95,7 +95,9 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 		return err
 	}
 	ctx = chezmoi.WithExecutable(ctx, executable)
-	fmt.Fprintf(out, "Chezmoi executable: %s\n", executable)
+	if verboseOutput(out) {
+		fmt.Fprintf(out, "Chezmoi executable: %s\n", executable)
+	}
 	stage = "source acquisition"
 	source, err := chezmoi.SetupSource(ctx, plan.Repository, confirmReplacement(in, out))
 	if source.Changed {
@@ -109,13 +111,21 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	}
 	stage = "settings and root integration"
 	integration, err := chezmoi.PrepareIntegration(ctx, source.Path)
+	sourceEdited := false
 	for _, effect := range integration.Effects {
 		fmt.Fprintf(out, "Integration file %s: %s\n", effect.Action, effect.Path)
+		if filepath.Base(effect.Path) == ".chezmoiignore" {
+			sourceEdited = true
+		}
 	}
 	// Source edits remain user-owned even if a later stage fails.
-	if len(integration.Effects) != 0 {
-		fmt.Fprintf(out, "Review the checkout diff at %s and commit source changes yourself; "+
-			"external policy is separate local state.\n", source.Path)
+	if sourceEdited {
+		fmt.Fprintln(out, colored(out,
+			"Action required: commit reviewed checkout changes before synchronization.", yellow))
+		fmt.Fprintf(out, "Review source edits at %s, including generated .chezmoiignore changes, "+
+			"and commit intended source changes yourself before install, update, update cfg, "+
+			"or files refresh --update-source; these operations require a clean checkout. "+
+			"Move unrelated data outside the checkout. No source changes are committed automatically.\n", source.Path)
 	}
 	if err != nil {
 		return err
@@ -156,8 +166,8 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	if err = chezmoi.VerifyDiscovery(ctx, source.Path, refreshed.Policy); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "Init complete; only missing chezmoi and its dependencies may have been installed; "+
-		"no configuration hooks or destination configurations were applied.")
+	printOutcome(out, "OK", "Init complete; only missing chezmoi and its dependencies may have been installed; "+
+		"no configuration hooks or destination configurations were applied.", green)
 	return nil
 }
 

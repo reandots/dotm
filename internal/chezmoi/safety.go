@@ -76,12 +76,29 @@ func inspectCheckoutMode(ctx context.Context, path string, requireClean bool) (c
 	}
 	if requireClean {
 		status, statusErr := git(ctx, path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-			"--ignored=matching", "--ignore-submodules=none")
+			"--ignored=matching", "--ignore-submodules=none", "--no-renames")
 		if statusErr != nil {
 			return state, statusErr
 		}
 		if status != "" {
-			return state, fmt.Errorf("source has dirty, untracked, or ignored data; refusing synchronization")
+			var message strings.Builder
+			fmt.Fprintf(&message, "source repository %q is dirty (changed, untracked, or ignored data); "+
+				"refusing synchronization:\n", path)
+			for _, entry := range strings.Split(status, "\x00") {
+				if len(entry) >= 4 {
+					kind := "changed"
+					switch entry[:2] {
+					case "??":
+						kind = "untracked"
+					case "!!":
+						kind = "ignored"
+					}
+					fmt.Fprintf(&message, "  %s: %q\n", kind, entry[3:])
+				}
+			}
+			message.WriteString("Review these paths; commit intended source changes and move unrelated data " +
+				"outside the checkout before retrying. No files were discarded.")
+			return state, fmt.Errorf("%s", message.String())
 		}
 	}
 	if requireClean {
@@ -152,7 +169,9 @@ func checkUntrackedDirectories(root, files string) error {
 			return filepath.SkipDir
 		}
 		if !known[relative] {
-			return fmt.Errorf("source has untracked data at %s", relative)
+			return fmt.Errorf("source repository %q has untracked data at %q; refusing synchronization; "+
+				"review this path and move unrelated data outside the checkout before retrying "+
+				"(Git does not track empty directories); no files were discarded", root, relative)
 		}
 		return nil
 	})

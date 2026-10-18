@@ -17,6 +17,8 @@ For a missing, malformed, or stale regular policy file, use `files refresh`; if 
 
 Run `dotm doctor` for broad read-only diagnosis with the actual data directory. It returns 0 only without failures, 1 for checked dotm/source/policy input failures, and 3 for host/execution/internal failures, retaining maximum severity. Independent findings remain visible when manifests/backends fail; dependency-blocked checks are explicit, not success. Failures appear once on stderr; warnings/results/skips use stdout. There is no automatic repair or Nix/session provisioning. Effective checks execute trusted templates; current-process PATH/share discovery does not prove a fresh login or desktop session.
 
+Use `status --verbose` for detailed installed entries; global `-v` / `--verbose` changes output, not safety or mutation scope. Never repeat a mutating operation only for verbosity without accounting for repeated hooks and retained effects. Init's generated `.chezmoiignore` edits must be reviewed and committed by the user before source synchronization. Dirty-source errors name the checkout and quoted blocking paths, including ignored data; empty untracked directories are diagnosed too and cannot be committed in Git. Preserve intended work and move unrelated data outside the checkout; do not recommend destructive cleanup to satisfy the gate. Local `files refresh` without `--update-source` remains local and does not require acquisition cleanliness.
+
 ## Diagnostic decisions
 
 | Observation | User action |

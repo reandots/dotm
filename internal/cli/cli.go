@@ -18,6 +18,7 @@ import (
 
 type cli struct {
 	DataDir         string `help:"directory containing catalog.toml and configurations.toml (default: XDG_CONFIG_HOME/dotm/data, or ~/.config/dotm/data)"`
+	Verbose         bool   `short:"v" help:"Show detailed diagnostic output"`
 	InstallMissing  bool   `name:"install" short:"i" help:"Run hooks and install missing desired applications without updating installed entries"`
 	UpdateInstalled bool   `name:"update" short:"u" help:"Run hooks, update installed desired applications and complete their dependencies"`
 	RemoveExtra     bool   `name:"remove-extras" short:"r" help:"Remove extras with individual confirmation after update/install"`
@@ -120,6 +121,8 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 	if helpRequested {
 		return nil
 	}
+	output.verbose = app.Verbose
+	diagnostics.verbose = app.Verbose
 	command := ctx.Command()
 	if command == "update run" {
 		command = "update"
@@ -219,7 +222,11 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 			if err != nil {
 				return err
 			}
-			printStatus(out, config.Name, path, config.Apps, report)
+			if app.Verbose {
+				printStatus(out, config.Name, path, config.Apps, report)
+			} else {
+				printCompactStatus(out, config.Name, report)
+			}
 			break
 		}
 		fmt.Fprintf(out,
@@ -295,7 +302,11 @@ func (app *cli) runOperations(
 		if !step.requested {
 			continue
 		}
-		fmt.Fprintf(stderr, "Operation: %s\n", step.name)
+		if app.Verbose {
+			fmt.Fprintf(stderr, "Operation: %s\n", step.name)
+		} else {
+			fmt.Fprintf(stderr, "==> %s\n", commandName(command, step.name))
+		}
 		var report installed.Report
 		var err error
 		switch step.name {
@@ -311,10 +322,14 @@ func (app *cli) runOperations(
 			report, err = installed.RemoveExtras(ctx, data, desired, app.Yes, in, stderr)
 		}
 		if report.Profile != "" {
-			fmt.Fprintf(out, "Operation result: %s\n", step.name)
-			printStatus(out, config.Name, selectionPath, config.Apps, report)
+			if app.Verbose {
+				fmt.Fprintf(out, "Operation result: %s\n", step.name)
+				printStatus(out, config.Name, selectionPath, config.Apps, report)
+			} else {
+				printCompactStatus(out, config.Name, report)
+			}
 		}
-		printConfiguration(out, report.Configuration)
+		printConfigurationMode(out, report.Configuration, app.Verbose)
 		for _, stream := range []io.Writer{out, stderr} {
 			if writer, ok := stream.(*checkedWriter); ok && writer.err != nil {
 				err = &installed.OperationError{Severity: installed.SeverityInternal, Err: errors.Join(err, writer.err)}
@@ -383,6 +398,40 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 	for _, entry := range report.Extras {
 		fmt.Fprintf(out, "  %s\n", entry.Name)
 	}
+}
+
+func printCompactStatus(out io.Writer, name string, report installed.Report) {
+	fmt.Fprintf(out, "Packages (%s):\n", name)
+	if len(report.Applications) == 0 {
+		fmt.Fprintln(out, "  No selected applications.")
+	}
+	for _, app := range report.Applications {
+		shade := green
+		if !app.Ready {
+			shade = yellow
+		}
+		fmt.Fprintf(out, "  %s %s: %s", colored(out, "-", shade), app.ID, colored(out, app.State, shade))
+		if !app.Ready {
+			fmt.Fprintf(out, "; configuration blocked by %s", list(app.BlockedBy))
+		}
+		fmt.Fprintln(out)
+	}
+	if len(report.Extras) != 0 {
+		fmt.Fprintf(out, "  %s %d extra package entries; review with status --verbose or remove-extras.\n",
+			colored(out, "Warning:", yellow), len(report.Extras))
+	}
+}
+
+func commandName(command, step string) string {
+	if command == "update cfg" {
+		return command
+	}
+	return step
+}
+
+func verboseOutput(out io.Writer) bool {
+	writer, ok := out.(*checkedWriter)
+	return ok && writer.verbose
 }
 
 func list(values []string) string {

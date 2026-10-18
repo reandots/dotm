@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -122,6 +123,9 @@ func (s *sourceRegressionSuite) TestMatchingDirtyCheckoutPreservesFiles() {
 				}
 				_, err := (sourceManager{path: path, rename: os.Rename}).sync(context.Background(), s.remote, nil)
 				s.Error(err)
+				s.Require().ErrorContains(err, "empty")
+				s.Contains(err.Error(), path)
+				s.Contains(err.Error(), "empty directories")
 				s.DirExists(filepath.Join(path, "empty", "nested"))
 				return
 			}
@@ -131,6 +135,9 @@ func (s *sourceRegressionSuite) TestMatchingDirtyCheckoutPreservesFiles() {
 			}
 			_, err := (sourceManager{path: path, rename: os.Rename}).sync(context.Background(), s.remote, nil)
 			s.Error(err)
+			s.Require().ErrorContains(err, name)
+			s.Contains(err.Error(), path)
+			s.Contains(err.Error(), "commit intended source changes")
 			data, readErr := os.ReadFile(file)
 			s.Require().NoError(readErr)
 			s.Equal(contents, string(data))
@@ -222,4 +229,18 @@ func (s *sourceRegressionSuite) TestGitHooksAreNotRun() {
 	s.Require().NoError(err)
 	_, err = os.Stat(marker)
 	s.True(os.IsNotExist(err))
+}
+
+func (s *sourceRegressionSuite) TestDirtyRenameQuotesBothBlockingPaths() {
+	s.seedRemote()
+	path := filepath.Join(s.root, "checkout")
+	s.cloneSource(path)
+	name := "renamed\nfile"
+	s.sourceGit(path, "mv", "tracked.txt", name)
+	_, err := (sourceManager{path: path, rename: os.Rename}).sync(context.Background(), s.remote, nil)
+	s.Require().Error(err)
+	s.Contains(err.Error(), strconv.Quote("tracked.txt"))
+	s.Contains(err.Error(), strconv.Quote(name))
+	s.NotContains(err.Error(), name)
+	s.FileExists(filepath.Join(path, name))
 }

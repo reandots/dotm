@@ -39,7 +39,8 @@ func ExitCode(err error) int {
 
 type checkedWriter struct {
 	io.Writer
-	err error
+	err     error
+	verbose bool
 }
 
 func (w *checkedWriter) Write(p []byte) (int, error) {
@@ -67,7 +68,7 @@ func lintSource(source string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "Configuration source: %s\n", result.SourceDir)
 	if len(result.Diagnostics) == 0 {
-		fmt.Fprintln(out, "Configuration policy: valid (templates are not evaluated)")
+		printOutcome(out, "OK", "Configuration policy: valid (templates are not evaluated)", green)
 		return nil
 	}
 	return &installed.OperationError{Severity: installed.SeverityConfiguration, Err: result.Err()}
@@ -159,6 +160,79 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 	}
 }
 
+func printConfigurationMode(out io.Writer, result installed.ConfigurationResult, verbose bool) {
+	if verbose {
+		printConfiguration(out, result)
+		return
+	}
+	if len(result.Applications) == 0 && result.SourceStage.Status == "" {
+		return
+	}
+	shade, label := green, "OK"
+	if result.Severity != installed.SeveritySuccess {
+		shade, label = red, "Failed"
+	}
+	printOutcome(out, label, "Configuration: "+severityName(result.Severity), shade)
+	if result.Source.Backup != "" {
+		fmt.Fprintf(out, "  Retained source backup: %s\n", result.Source.Backup)
+	}
+	for _, diagnostic := range result.Policy.Diagnostics {
+		if diagnostic.Severity == manifest.FileWarning {
+			fmt.Fprintln(out, colored(out, diagnostic.String(), yellow))
+		}
+	}
+	if result.SourceStage.Status == installed.StageFailed {
+		fmt.Fprintf(out, "  Source synchronization failed: %s\n", result.Source.Path)
+		fmt.Fprintln(out, "  Configurations were not applied; "+
+			"completed package and pre-configuration hook effects remain.")
+		return
+	}
+	if result.PolicyStage.Status == installed.StageFailed {
+		fmt.Fprintln(out, "  File-policy checks failed; configurations were not applied.")
+		return
+	}
+	for _, app := range result.Applications {
+		if !app.Eligible {
+			fmt.Fprintf(out, "  %s %s: package requirements not ready; blocked by %s\n",
+				colored(out, "Skipped", yellow), app.ID, list(app.BlockedBy))
+			continue
+		}
+		problem := false
+		for _, stage := range []struct {
+			name   string
+			result installed.StageResult
+		}{{"pre-config hook", app.Pre}, {"configs", app.Config}, {"post-config hook", app.Post}} {
+			if stage.result.Status == "" || stage.result.Status == installed.StageSuccess {
+				continue
+			}
+			problem = true
+			shade := yellow
+			if stage.result.Status == installed.StageFailed {
+				shade = red
+			}
+			fmt.Fprintf(out, "  %s: %s %s", app.ID, stage.name, colored(out, string(stage.result.Status), shade))
+			if len(stage.result.BlockedBy) != 0 {
+				fmt.Fprintf(out, "; blocked by %s", list(stage.result.BlockedBy))
+			}
+			fmt.Fprintln(out)
+		}
+		if !problem {
+			fmt.Fprintf(out, "  %s %s: configuration complete\n", colored(out, "OK", green), app.ID)
+		}
+	}
+	for _, target := range result.Apply.Targets {
+		if target.Status == chezmoi.ApplySuccess {
+			continue
+		}
+		shade := yellow
+		if failedApplyStatus(target.Status) {
+			shade = red
+		}
+		fmt.Fprintf(out, "  %s %s (owners: %s)\n", colored(out, string(target.Status), shade),
+			target.Path, list(target.Applications))
+	}
+}
+
 func failedApplyStatus(status chezmoi.ApplyStatus) bool {
 	return status == chezmoi.ApplyConflict || status == chezmoi.ApplyError || status == chezmoi.ApplyMissing
 }
@@ -174,4 +248,12 @@ func severityName(severity installed.Severity) string {
 	default:
 		return "dotm failure"
 	}
+}
+
+// PrintError emits the returned failure once, preserving its original causes.
+func PrintError(out io.Writer, err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintf(out, "%s %v\n", colored(out, "dotm:", red), err)
 }

@@ -4,6 +4,18 @@
 
 Examples use the default data directory. Add `--data-dir /path/to/data` for another shared catalog. Long options use `--` and may appear before or after a command. Use `./dotm --help` or `./dotm <command> --help` for syntax.
 
+## Output and verbosity
+
+Normal package status and lifecycle reports show application state and configuration outcomes without Nix URLs, generated entry IDs, or store-path inventories. Use global `-v` / `--verbose` before or after the command for detailed reports:
+
+```sh
+./dotm install --verbose
+./dotm -v status
+./dotm -viur
+```
+
+Success, warning, and failure labels use color only in a terminal; set `NO_COLOR` to disable it. Redirected output has no color escapes. Errors, warnings, dependency blockers, retained backups, and native/hook diagnostics remain visible without `--verbose`. An application reported as installed describes current state, not necessarily a package installed by this invocation. Package readiness does not prove configuration synchronization.
+
 ## Command reference
 
 | Command | Behavior |
@@ -34,6 +46,8 @@ Supply `--configuration` and `--repository` when local inputs do not already pro
 
 Init prepares approved files, backend, checkout, compatible static settings, root ignore integration and policy, then checks normal discovery. Matching checkouts are validated without fetch/fast-forward; dirty content and native rules remain. Only missing chezmoi and dependencies may be installed, with their package pre-hooks; other selected applications, configuration hooks and destinations are not deployed. No auto-commits or silent origin changes occur. Unsafe integration requires manual correction. Review completed manifest/package/source effects and retained backups, then commit shared-manifest and checkout changes yourself. Later errors retain earlier effects; repeat after repair.
 
+When init edits the checkout integration, it explicitly asks you to review and commit those changes, including `.chezmoiignore`, before source synchronization. This reminder also appears if a later setup stage fails. Ordinary `install`, `update`, `update cfg`, and `files refresh --update-source` require a clean source; init's permission to prepare a dirty matching checkout does not relax that rule.
+
 ## Diagnose setup
 
 Run `./dotm doctor` after setup or when prerequisites fail; global `--data-dir` selects the shared manifests. It checks selection/declarations, passive source/settings safety, owned root integration, effective native rules and published policy binding/freshness, Git/chezmoi capabilities, Nix features/daemon/profile, and current PATH/XDG exposure. Independent checks continue after failures; dependency-blocked checks name the missing prerequisite and are not passes.
@@ -51,7 +65,7 @@ Failures appear once on stderr; warnings, results and blocked checks use stdout.
 ./dotm status
 ```
 
-Status distinguishes installed, partial, missing, and package-free applications, explicit native entries, and removable extras. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
+Status distinguishes installed, partial, missing, and package-free applications, dependency readiness, and removable extras. Use `status --verbose` for explicit native entries, descriptors, source URLs, and store paths. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
 
 With healthy source state, installation adds only missing descriptors, including missing pieces of multi-package applications, and preserves installed entries, extras, and the source lock. Repeating a satisfied install still runs configured hooks/configuration phases. Ambiguous desired native entries fail rather than being automatically repaired.
 
