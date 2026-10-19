@@ -26,7 +26,7 @@ func (s *filesStatusSuite) TestBothDifferencesRemainVisibleWithoutDuplicatingUns
 	}}}
 	s.Require().NoError(printFilesStatus(&out, inventory, false))
 	text := out.String()
-	s.Equal(1, strings.Count(text, `"/home/test/line\nbreak"`))
+	s.Equal(1, strings.Count(text, `/home/test/line\nbreak`))
 	s.NotContains(text, "/home/test/line\nbreak")
 	s.Contains(text, "modified")
 	s.Contains(text, "deleted")
@@ -51,4 +51,21 @@ func (s *filesStatusSuite) TestUntrackedLinksAreNotManagedChanges() {
 	s.Contains(out.String(), "symlink")
 	s.NotContains(out.String(), "Local changes")
 	s.NotContains(out.String(), "Pending changes from chezmoi")
+	s.NotContains(out.String(), "added")
+}
+
+func (s *filesStatusSuite) TestHomePathsPreserveComponentBoundariesAndSpaces() {
+	s.T().Setenv("HOME", "/home/test")
+	var out bytes.Buffer
+	inventory := chezmoi.InventoryResult{Entries: []chezmoi.InventoryEntry{
+		{Path: "/home/test", Type: "directory"},
+		{Path: "/home/test/a file", Type: "file"},
+		{Path: "/home/test/zsh", Type: "directory"},
+		{Path: "/home/test2/outside", Type: "file"},
+	}}
+	s.Require().NoError(printFilesStatus(&out, inventory, false))
+	s.Contains(out.String(), "  directory ~\n  file      ~/a file\n  directory ~/zsh\n"+
+		"  file      /home/test2/outside\n")
+	s.NotContains(out.String(), `"`)
+	s.NotContains(out.String(), "added")
 }

@@ -154,6 +154,10 @@ func Inventory(ctx context.Context, source string, policy Policy) (InventoryResu
 			unknown[path] = true
 		}
 	}
+	boundaries, err := inventoryBoundaries(policy)
+	if err != nil {
+		return result, err
+	}
 	var collect func([]string) error
 	collect = func(paths []string) error {
 		if len(paths) == 0 {
@@ -179,10 +183,7 @@ func Inventory(ctx context.Context, source string, policy Policy) (InventoryResu
 			if statErr != nil {
 				return fmt.Errorf("inspect %q: %w", path, statErr)
 			}
-			structural := hasAckBelow(path, acks)
-			for _, root := range roots {
-				structural = structural || path == root
-			}
+			structural := boundaries[path] || hasAckBelow(path, acks)
 			if !info.IsDir() || !structural {
 				unknown[path] = true
 				continue
@@ -208,6 +209,9 @@ func Inventory(ctx context.Context, source string, policy Policy) (InventoryResu
 	if err = collect(roots); err != nil {
 		return result, err
 	}
+	if err = compactInventoryUnknown(destination, unknown, boundaries); err != nil {
+		return result, err
+	}
 	for path := range unknown {
 		info, statErr := lstatNoSymlinkAncestors(destination, path)
 		if statErr != nil {
@@ -217,6 +221,82 @@ func Inventory(ctx context.Context, source string, policy Policy) (InventoryResu
 	}
 	sort.Slice(result.Entries, func(i, j int) bool { return result.Entries[i].Path < result.Entries[j].Path })
 	return result, nil
+}
+
+func inventoryBoundaries(policy Policy) (map[string]bool, error) {
+	destination := policy.DestDir
+	boundaries := map[string]bool{destination: true}
+	for _, value := range []string{"~", "$XDG_CONFIG_HOME", "$XDG_DATA_HOME", "$XDG_STATE_HOME", "$XDG_CACHE_HOME"} {
+		path, err := pathutil.Target(value)
+		if err != nil {
+			return nil, err
+		}
+		boundaries[path] = true
+	}
+	for _, declaration := range policy.Input.Files.Declarations {
+		if declaration.Field != "configs" {
+			continue
+		}
+		for parent := filepath.Dir(declaration.Path); within(destination, parent); parent = filepath.Dir(parent) {
+			boundaries[parent] = true
+			if parent == destination {
+				break
+			}
+		}
+		if declaration.Selected {
+			boundaries[declaration.Path] = true
+		}
+	}
+	return boundaries, nil
+}
+
+// Collapse only complete unknown trees. Hidden children and declaration boundaries
+// prevent a parent from representing entries with a different classification.
+func compactInventoryUnknown(destination string, unknown, boundaries map[string]bool) error {
+	candidates := make(map[string]bool)
+	for path := range unknown {
+		parent := filepath.Dir(path)
+		for within(destination, parent) && !boundaries[parent] {
+			if candidates[parent] {
+				break
+			}
+			candidates[parent] = true
+			parent = filepath.Dir(parent)
+		}
+	}
+	paths := make([]string, 0, len(candidates))
+	for path := range candidates {
+		paths = append(paths, path)
+	}
+	// Descendants precede their parents in reverse lexical order.
+	sort.Sort(sort.Reverse(sort.StringSlice(paths)))
+	for _, path := range paths {
+		info, err := lstatNoSymlinkAncestors(destination, path)
+		if err != nil {
+			return fmt.Errorf("inspect %q: %w", path, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+		children, err := os.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("enumerate %q: %w", path, err)
+		}
+		complete := len(children) != 0
+		for _, child := range children {
+			if !unknown[filepath.Join(path, child.Name())] {
+				complete = false
+				break
+			}
+		}
+		if complete {
+			for _, child := range children {
+				delete(unknown, filepath.Join(path, child.Name()))
+			}
+			unknown[path] = true
+		}
+	}
+	return nil
 }
 
 func inventoryOwners(policy Policy, path string) []string {

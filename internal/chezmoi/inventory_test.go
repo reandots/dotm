@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"dotm/internal/manifest"
@@ -64,6 +65,8 @@ func (s *policySuite) TestInventorySeparatesAcknowledgementsFromProfileFiltering
 		s.write(filepath.Join(s.source, "dot_config", "selected", "literal_"+name), "initial\n")
 	}
 	s.write(filepath.Join(s.source, "dot_config", "other", "settings"), "other\n")
+	s.write(filepath.Join(s.source, "dot_config", "other", "app", "aliases"), "alias\n")
+	s.write(filepath.Join(s.source, "dot_config", "mixed", "settings"), "mixed\n")
 	_, err := policyCommand(context.Background(), applyCommand{source: s.source}, "apply")
 	s.Require().NoError(err)
 	s.write(filepath.Join(s.home, ".config", "selected", "both"), "local\n")
@@ -73,12 +76,16 @@ func (s *policySuite) TestInventorySeparatesAcknowledgementsFromProfileFiltering
 	for _, path := range []string{
 		"boundary/known/data", "boundary/unknown/data", "boundary/ignored/data",
 		".config/selected/new", ".config/selected/cache.db", "selected-cache/data", "root-native",
+		".config/mixed/hidden/data",
 	} {
 		s.write(filepath.Join(s.home, path), "data\n")
 	}
+	s.write(filepath.Join(s.source, "dot_config", "mixed", ".chezmoiignore"), "hidden/\n")
+	s.Require().NoError(os.Symlink("settings", filepath.Join(s.home, ".config", "other", "link")))
 	declarations := []manifest.FileDeclaration{
 		{Field: "configs", Application: "selected", Selected: true, Path: filepath.Join(s.home, ".config", "selected")},
 		{Field: "configs", Application: "other", Path: filepath.Join(s.home, ".config", "other")},
+		{Field: "configs", Application: "mixed", Path: filepath.Join(s.home, ".config", "mixed")},
 		{Field: "unmanaged", Application: "selected", Selected: true, Path: filepath.Join(s.home, "selected-cache")},
 		{Field: "unmanaged", Path: filepath.Join(s.home, "boundary", "known")},
 	}
@@ -86,6 +93,9 @@ func (s *policySuite) TestInventorySeparatesAcknowledgementsFromProfileFiltering
 	result, err := Inventory(context.Background(), s.source, policy)
 	s.Require().NoError(err)
 	entries := make(map[string]InventoryEntry)
+	s.True(sort.SliceIsSorted(result.Entries, func(i, j int) bool {
+		return result.Entries[i].Path < result.Entries[j].Path
+	}))
 	for _, entry := range result.Entries {
 		path, relErr := filepath.Rel(s.home, entry.Path)
 		s.Require().NoError(relErr)
@@ -95,8 +105,15 @@ func (s *policySuite) TestInventorySeparatesAcknowledgementsFromProfileFiltering
 	s.NotContains(entries, "boundary")
 	s.NotContains(entries, "boundary/known")
 	s.NotContains(entries, "boundary/ignored")
-	s.Contains(entries, ".config/other/settings")
-	s.False(entries[".config/other/settings"].Managed)
+	s.Contains(entries, ".config/other")
+	s.False(entries[".config/other"].Managed)
+	s.Equal("directory", entries[".config/other"].Type)
+	s.NotContains(entries, ".config/other/settings")
+	s.NotContains(entries, ".config/other/app/aliases")
+	s.NotContains(entries, ".config/other/link")
+	s.NotContains(entries, ".config/mixed")
+	s.Contains(entries, ".config/mixed/settings")
+	s.NotContains(entries, ".config/mixed/hidden")
 	s.Contains(entries, ".config/selected/new")
 	s.NotContains(entries, ".config/selected/same")
 	s.NotContains(entries, ".config/selected/cache.db")

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -23,6 +25,12 @@ func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings
 		}
 	}
 
+	home, _ := os.UserHomeDir()
+	if home != "" && filepath.IsAbs(home) {
+		home = filepath.Clean(home)
+	} else {
+		home = ""
+	}
 	color := statusColor(out)
 	if len(local)+len(pending)+len(unknown) == 0 {
 		message := "Filesystem status: clean"
@@ -60,10 +68,6 @@ func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings
 				label = "added"
 			case 'D':
 				label = "deleted"
-			default:
-				if !entry.Managed {
-					label = "added"
-				}
 			}
 			typeName := entry.Type
 			if typeName == "" {
@@ -80,7 +84,23 @@ func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings
 			if entryColor != "" {
 				entryReset = reset
 			}
-			_, writeErr := fmt.Fprintf(out, "  %s%-8s %-9s %q%s", entryColor, label, typeName, entry.Path, entryReset)
+			path := entry.Path
+			if home != "" {
+				if path == home {
+					path = "~"
+				} else if relative, found := strings.CutPrefix(path, home+string(filepath.Separator)); found {
+					path = "~/" + relative
+				}
+			}
+			// Escape line breaks and terminal controls without surrounding ordinary paths in quotes.
+			path = strconv.QuoteToGraphic(path)
+			path = path[1 : len(path)-1]
+			var writeErr error
+			if entry.Managed {
+				_, writeErr = fmt.Fprintf(out, "  %s%-8s %-9s %s%s", entryColor, label, typeName, path, entryReset)
+			} else {
+				_, writeErr = fmt.Fprintf(out, "  %s%-9s %s%s", entryColor, typeName, path, entryReset)
+			}
 			if writeErr != nil {
 				return writeErr
 			}
