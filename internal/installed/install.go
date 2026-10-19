@@ -44,6 +44,11 @@ func install(
 	if err != nil {
 		return Report{}, err
 	}
+	defer func() {
+		if report.Profile != "" {
+			report.PackageChanges = packageChanges(before, report)
+		}
+	}()
 	base, err := stateHome()
 	if err != nil {
 		return before, err

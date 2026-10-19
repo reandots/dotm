@@ -2,7 +2,8 @@
 
 Assume `dotm` is already installed and available on PATH; invoke it directly as `dotm`. `dotm --help` and `dotm <command> --help` describe installed syntax. Long options use `--` and can precede/follow commands. Use the same `--data-dir /actual/shared/data` on every command when nondefault; this never relocates local selection/exclusions.
 
-Package status and lifecycle output is concise by default. Global `-v` / `--verbose` before or after the command exposes detailed Nix entries, URLs/store paths, and lifecycle stages (`dotm status --verbose`, `dotm -v install`, `dotm -viur`). Installed state is not evidence of a new installation during that invocation, and readiness is not configuration synchronization. Warnings, failures, blockers, backups, and native/hook diagnostics remain visible without verbosity. Color is terminal-only and respects `NO_COLOR`; redirected output is plain.
+Default mutating `install`, `update`, and `remove-extras` reports show package effects observed during this invocation, not the full installed inventory. They explicitly report when no package changed; the unchanged inventory is available only with `-v` / `--verbose`. Configuration work gives one overall completion/failure summary rather than per-application success boilerplate, and names changed destination paths/source changes; unchanged successful paths and successful ignore exclusions stay in verbose details. A completed configuration cycle or hooks do not imply changed files; `update cfg` has no redundant package inventory. Status, show, list, and check commands keep their requested state/findings in default output. Warnings, failures, blockers, backups, partial effects, and actual native/hook output remain visible. Color is terminal-only and respects `NO_COLOR`; redirected output is plain.
+
 
 ## Choose a command
 

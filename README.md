@@ -29,7 +29,7 @@ For pinned developer tools, use `just setup`; this trusts the checkout's mise co
 
 Before deploying, follow [installation and host preparation](doc/en/installation.md), create your [manifests and local selection](doc/en/configuration.md), then review `show` and `status`. `install` and `update` can run trusted hooks and modify application files, not just packages.
 
-Everyday package/lifecycle reports are concise; add `-v` / `--verbose` for backend details. Terminal colors respect `NO_COLOR` and disappear when redirected. After `init` edits the checkout integration, review and commit its source changes before ordinary synchronization.
+Mutating package reports describe effects observed during this invocation, not the full installed inventory; use `-v` / `--verbose` for unchanged inventory and backend detail. Configuration reports summarize the overall result, with applied paths/source changes only when reported; a completed config cycle or hooks do not imply changed files. Warnings, failures, blockers, backups, partial effects, and actual native/hook output remain visible. Status, show, list, and check commands continue to report the state or findings requested. Terminal colors respect `NO_COLOR` and disappear when redirected. After `init` edits the checkout integration, review and commit its source changes before ordinary synchronization.
 
 For an existing installation, follow the [integration transition guide](doc/en/chezmoi.md#upgrade-an-existing-installation): explicitly adopt the root block with `init`, review/publish the source diff, then diagnose before deployment. Ordinary lifecycle/refresh does not migrate integration; doctor does not repair it.
 

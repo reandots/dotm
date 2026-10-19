@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,11 +21,65 @@ import (
 )
 
 type Report struct {
-	Profile       string
-	Applications  []ApplicationStatus
-	Entries       []Entry
-	Extras        []Entry
-	Configuration ConfigurationResult
+	Profile        string
+	Applications   []ApplicationStatus
+	Entries        []Entry
+	Extras         []Entry
+	PackageChanges []PackageChange
+	Configuration  ConfigurationResult
+}
+
+type PackageChange struct {
+	Action     string
+	Descriptor string
+	Name       string
+}
+
+func packageChanges(before, after Report) []PackageChange {
+	beforeByName := make(map[string]Entry, len(before.Entries))
+	for _, entry := range before.Entries {
+		beforeByName[entry.Name] = entry
+	}
+	changes := make([]PackageChange, 0)
+	for _, entry := range after.Entries {
+		old, existed := beforeByName[entry.Name]
+		if !existed {
+			changes = append(changes, packageChange("installed", entry))
+		} else if !samePaths(old.StorePaths, entry.StorePaths) {
+			changes = append(changes, packageChange("updated", entry))
+		}
+		delete(beforeByName, entry.Name)
+	}
+	for _, entry := range before.Entries {
+		if _, remains := beforeByName[entry.Name]; remains {
+			changes = append(changes, packageChange("removed", entry))
+		}
+	}
+	return changes
+}
+
+func packageChange(action string, entry Entry) PackageChange {
+	return PackageChange{Action: action, Descriptor: entry.Descriptor, Name: entry.Name}
+}
+
+func samePaths(a, b []string) bool {
+	if slices.Equal(a, b) {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, path := range a {
+		counts[path]++
+	}
+	for _, path := range b {
+		if counts[path] == 0 {
+			return false
+		}
+		counts[path]--
+	}
+	return true
 }
 
 type ApplicationStatus struct {

@@ -323,10 +323,11 @@ func (app *cli) runOperations(
 		}
 		if report.Profile != "" {
 			if app.Verbose {
+				printPackageChanges(out, commandName(command, step.name), report, err)
 				fmt.Fprintf(out, "Operation result: %s\n", step.name)
 				printStatus(out, config.Name, selectionPath, config.Apps, report)
 			} else {
-				printCompactStatus(out, config.Name, report)
+				printPackageChanges(out, commandName(command, step.name), report, err)
 			}
 		}
 		printConfigurationMode(out, report.Configuration, app.Verbose)
@@ -415,6 +416,42 @@ func printCompactStatus(out io.Writer, name string, report installed.Report) {
 			fmt.Fprintf(out, "; configuration blocked by %s", list(app.BlockedBy))
 		}
 		fmt.Fprintln(out)
+	}
+	if len(report.Extras) != 0 {
+		fmt.Fprintf(out, "  %s %d extra package entries; review with status --verbose or remove-extras.\n",
+			colored(out, "Warning:", yellow), len(report.Extras))
+	}
+}
+
+func printPackageChanges(out io.Writer, command string, report installed.Report, operationErr error) {
+	if command != "update cfg" {
+		if len(report.PackageChanges) != 0 {
+			fmt.Fprintln(out, "Packages:")
+		}
+		for _, change := range report.PackageChanges {
+			name := change.Descriptor
+			if name == "" {
+				name = change.Name
+			}
+			fmt.Fprintf(out, "  %s %s: %s\n", colored(out, "-", green), name, change.Action)
+		}
+		if len(report.PackageChanges) == 0 {
+			message := "Packages: no changes"
+			if operationErr != nil {
+				message = "Packages: no changes observed; operation failed"
+			} else if command == "install" {
+				message = "Packages: no new packages"
+			} else if command == "remove-extras" {
+				message = "Packages: no packages removed"
+			}
+			fmt.Fprintln(out, message)
+		}
+	}
+	for _, app := range report.Applications {
+		if !app.Ready {
+			fmt.Fprintf(out, "  %s %s: %s; configuration blocked by %s\n",
+				colored(out, "Warning:", yellow), app.ID, app.State, list(app.BlockedBy))
+		}
 	}
 	if len(report.Extras) != 0 {
 		fmt.Fprintf(out, "  %s %d extra package entries; review with status --verbose or remove-extras.\n",

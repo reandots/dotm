@@ -88,17 +88,30 @@ func (s *applySuite) TestFirstAdoptionConflictPreservesUserDataAndAppliesSibling
 func (s *applySuite) TestManagedUpdateAndEditedOrLostStateConflict() {
 	s.put("managed", "one\n")
 	target := []manifest.ConfigTarget{{Path: "managed", Applications: []string{"app"}}}
-	s.apply(target)
+	first := s.apply(target)
+	entry, ok := findEntry(first, filepath.Join(s.dest, "managed"))
+	s.Require().True(ok)
+	s.True(entry.Changed)
+	unchanged := s.apply(target)
+	entry, ok = findEntry(unchanged, filepath.Join(s.dest, "managed"))
+	s.Require().True(ok)
+	s.False(entry.Changed)
 	s.put("managed", "two\n")
 	updated := s.apply(target)
 	s.Equal("two\n", s.read("managed"))
 	s.True(hasEntryStatus(updated, filepath.Join(s.dest, "managed"), ApplySuccess))
+	entry, ok = findEntry(updated, filepath.Join(s.dest, "managed"))
+	s.Require().True(ok)
+	s.True(entry.Changed)
 	// A tracked file modified locally must not be overwritten.
 	s.Require().NoError(os.WriteFile(filepath.Join(s.dest, "managed"), []byte("local edit\n"), 0o600))
 	s.put("managed", "three\n")
 	edited := s.apply(target)
 	s.Equal("local edit\n", s.read("managed"))
 	s.True(hasEntryStatus(edited, filepath.Join(s.dest, "managed"), ApplyConflict))
+	entry, ok = findEntry(edited, filepath.Join(s.dest, "managed"))
+	s.Require().True(ok)
+	s.False(entry.Changed)
 	// Removing chezmoi's state while leaving the adopted file recreates a first-adoption conflict.
 	s.Require().NoError(os.WriteFile(filepath.Join(s.dest, "managed"), []byte("two\n"), 0o600))
 	s.Require().NoError(os.Chmod(filepath.Join(s.dest, "managed"), 0o644))
@@ -177,6 +190,9 @@ func (s *applySuite) TestIdenticalContentAndPermissionOnlyAdoptionConflict() {
 	s.Require().NoError(os.Chmod(path, 0o644))
 	adopted := s.apply([]manifest.ConfigTarget{{Path: "file", Applications: []string{"app"}}})
 	s.True(hasEntryStatus(adopted, path, ApplySuccess))
+	entry, ok := findEntry(adopted, path)
+	s.Require().True(ok)
+	s.False(entry.Changed, "recording unchanged content in chezmoi state is not a file change")
 }
 
 func (s *applySuite) TestWholeSourceRejectedOutsideRequestedScope() {

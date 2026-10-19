@@ -172,7 +172,14 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 	if result.Severity != installed.SeveritySuccess {
 		shade, label = red, "Failed"
 	}
-	printOutcome(out, label, "Configuration: "+severityName(result.Severity), shade)
+	outcome := "completed"
+	if result.Severity != installed.SeveritySuccess {
+		outcome = severityName(result.Severity)
+	}
+	printOutcome(out, label, "Configuration: "+outcome, shade)
+	if result.Source.Changed {
+		fmt.Fprintf(out, "  Source synchronized: %s\n", result.Source.Path)
+	}
 	if result.Source.Backup != "" {
 		fmt.Fprintf(out, "  Retained source backup: %s\n", result.Source.Backup)
 	}
@@ -197,7 +204,6 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 				colored(out, "Skipped", yellow), app.ID, list(app.BlockedBy))
 			continue
 		}
-		problem := false
 		for _, stage := range []struct {
 			name   string
 			result installed.StageResult
@@ -205,7 +211,6 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 			if stage.result.Status == "" || stage.result.Status == installed.StageSuccess {
 				continue
 			}
-			problem = true
 			shade := yellow
 			if stage.result.Status == installed.StageFailed {
 				shade = red
@@ -216,12 +221,15 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 			}
 			fmt.Fprintln(out)
 		}
-		if !problem {
-			fmt.Fprintf(out, "  %s %s: configuration complete\n", colored(out, "OK", green), app.ID)
+	}
+	for _, entry := range result.Apply.Entries {
+		if entry.Changed {
+			fmt.Fprintf(out, "  %s %s (owners: %s)\n", colored(out, "Changed", green),
+				entry.Path, list(entry.SelectedApplications))
 		}
 	}
 	for _, target := range result.Apply.Targets {
-		if target.Status == chezmoi.ApplySuccess {
+		if target.Status == chezmoi.ApplySuccess || target.Status == chezmoi.ApplyIgnored {
 			continue
 		}
 		shade := yellow

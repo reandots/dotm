@@ -70,6 +70,7 @@ func RemoveExtras(
 	if inspectErr != nil {
 		return Report{}, errors.Join(operationErr, fmt.Errorf("inspect after removal attempt: %w", inspectErr))
 	}
+	after.PackageChanges = packageChanges(before, after)
 	if operationErr != nil {
 		return after, operationErr
 	}

@@ -3,9 +3,11 @@ package chezmoi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -41,6 +43,7 @@ type EntryResult struct {
 	SelectedApplications []string
 	Status               ApplyStatus
 	Message              string
+	Changed              bool
 }
 
 type ApplyResult struct {
@@ -211,6 +214,7 @@ func Apply(
 			selection = append(selection, target)
 		}
 	}
+	var fingerprintBuffer [32 * 1024]byte
 	for _, path := range paths {
 		entry := selectEntry(path, selection, blocked)
 		if len(entry.Applications) == 0 {
@@ -219,6 +223,10 @@ func Apply(
 		if entry.Status != ApplySkipped {
 			entry.Status, entry.Message = checkDestination(path, entries[path].Type)
 			if entry.Status == ApplySuccess {
+				before, snapshotErr := fingerprintDestination(path, fingerprintBuffer[:])
+				if snapshotErr != nil {
+					return result, fmt.Errorf("inspect destination before apply %s: %w", path, snapshotErr)
+				}
 				_, message, err = command.run(ctx,
 					"--less-interactive", "--error-on-conflict", "--keep-going",
 					"apply", "--recursive=false", "--parent-dirs=false", "--", path,
@@ -241,6 +249,11 @@ func Apply(
 						entry.Message = err.Error()
 					}
 				}
+				after, snapshotErr := fingerprintDestination(path, fingerprintBuffer[:])
+				if snapshotErr != nil {
+					return result, fmt.Errorf("inspect destination after apply %s: %w", path, snapshotErr)
+				}
+				entry.Changed = before != after
 			}
 		}
 		result.Entries = append(result.Entries, entry)
@@ -255,6 +268,43 @@ func Apply(
 		}
 	}
 	return result, nil
+}
+
+// Ignore timestamps and directory children: adopting unchanged files into chezmoi's
+// state is not a destination change.
+type destinationFingerprint struct {
+	exists bool
+	mode   fs.FileMode
+	link   string
+	digest [sha256.Size]byte
+}
+
+func fingerprintDestination(path string, buffer []byte) (destinationFingerprint, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return destinationFingerprint{}, nil
+	}
+	if err != nil {
+		return destinationFingerprint{}, err
+	}
+	state := destinationFingerprint{exists: true, mode: info.Mode()}
+	switch {
+	case info.Mode().IsRegular():
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			return state, openErr
+		}
+		digest := sha256.New()
+		_, copyErr := io.CopyBuffer(digest, struct{ io.Reader }{file}, buffer)
+		closeErr := file.Close()
+		if err = errors.Join(copyErr, closeErr); err != nil {
+			return state, err
+		}
+		digest.Sum(state.digest[:0])
+	case info.Mode()&os.ModeSymlink != 0:
+		state.link, err = os.Readlink(path)
+	}
+	return state, err
 }
 
 func hasEligibleOwner(target manifest.ConfigTarget, blocked map[string]bool) bool {

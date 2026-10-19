@@ -80,6 +80,26 @@ func (s *InstalledSuite) TestNativeDescriptorIdentity() {
 	}
 }
 
+func (s *InstalledSuite) TestPackageChangesUseEntryAndStorePathIdentity() {
+	before := Report{Entries: []Entry{
+		{Name: "external", StorePaths: []string{"/store/a"}},
+		{Name: "managed", Descriptor: "tool", StorePaths: []string{"/store/one", "/store/two"}},
+		{Name: "reordered", StorePaths: []string{"/store/a", "/store/b"}},
+		{Name: "removed", Descriptor: "old"},
+	}}
+	after := Report{Entries: []Entry{
+		{Name: "external", StorePaths: []string{"/store/a"}, Descriptor: "new-metadata"},
+		{Name: "managed", Descriptor: "tool", StorePaths: []string{"/store/two", "/store/new"}},
+		{Name: "reordered", StorePaths: []string{"/store/b", "/store/a"}},
+		{Name: "added", Descriptor: "new"},
+	}}
+	s.Equal([]PackageChange{
+		{Action: "updated", Descriptor: "tool", Name: "managed"},
+		{Action: "installed", Descriptor: "new", Name: "added"},
+		{Action: "removed", Descriptor: "old", Name: "removed"},
+	}, packageChanges(before, after))
+}
+
 func (s *InstalledSuite) TestAllOutputsRetainNativeIdentityWithoutMatchingCatalog() {
 	const source = "/state/dotm/source"
 	for _, tc := range []struct {

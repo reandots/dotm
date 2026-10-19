@@ -166,7 +166,6 @@ func (s *ConfigurationCLISuite) TestConfigFailureReportsDependencySkip() {
 	out, _, err := s.run("update", "cfg")
 	s.Error(err)
 	s.Contains(out, "consumer: pre-config hook skipped; blocked by dependency")
-	s.NotContains(out, "consumer: configuration complete")
 }
 
 type failingWriter struct{}

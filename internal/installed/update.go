@@ -38,6 +38,11 @@ func Update(
 	if err != nil {
 		return Report{}, err
 	}
+	defer func() {
+		if report.Profile != "" {
+			report.PackageChanges = packageChanges(before, report)
+		}
+	}()
 	selected := updateSelection(before, desired)
 	if len(selected.Packages) == 0 {
 		fmt.Fprintln(stderr, "Update: no installed desired applications; source and profile unchanged.")

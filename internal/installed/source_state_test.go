@@ -147,8 +147,17 @@ func (s *SourceStateRecoverySuite) TestDegradedSourcesRemainExternalAndUpdateIsN
 func (s *SourceStateRecoverySuite) TestInstallPreservesExternalEntriesAndDoesNotReadoptThem() {
 	state, profile, source := s.fixture()
 	s.Require().NoError(os.Remove(filepath.Join(source, "flake.lock")))
-	report, err := Install(context.Background(), s.desired(), io.Discard, ConfigurationOptions{})
+	desired := s.desired()
+	hook := filepath.Join(filepath.Dir(state), "post-config")
+	// #nosec G306 -- Private executable fixture forces post-hook readiness reinspection.
+	s.Require().NoError(os.WriteFile(hook, []byte("#!/bin/sh\nexit 0\n"), 0o700))
+	desired.Applications[0].PostCfgHook = hook
+	report, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
+	s.Equal([]PackageChange{
+		{Action: "installed", Descriptor: "hello", Name: "new-2"},
+		{Action: "installed", Descriptor: "jq", Name: "new-3"},
+	}, report.PackageChanges)
 	s.Equal("installed", report.Applications[0].State)
 	s.Equal([]string{"direct-jq", "old-hello"}, []string{report.Extras[0].Name, report.Extras[1].Name})
 	for _, entry := range report.Extras {
@@ -161,9 +170,12 @@ func (s *SourceStateRecoverySuite) TestInstallPreservesExternalEntriesAndDoesNot
 	s.NoFileExists(filepath.Join(source, "flake.lock"))
 	before := mustRead(s.T(), filepath.Join(profile, "manifest.json"))
 	mutations := mustRead(s.T(), filepath.Join(state, "mutations"))
-	again, err := Install(context.Background(), s.desired(), io.Discard, ConfigurationOptions{})
+	again, err := Install(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().NoError(err)
-	s.Equal(report, again)
+	s.Empty(again.PackageChanges)
+	s.Equal(report.Applications, again.Applications)
+	s.Equal(report.Entries, again.Entries)
+	s.Equal(report.Extras, again.Extras)
 	s.Equal(before, mustRead(s.T(), filepath.Join(profile, "manifest.json")))
 	s.Equal(mutations, mustRead(s.T(), filepath.Join(state, "mutations")))
 }

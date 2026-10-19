@@ -246,8 +246,9 @@ func (s *UpdateRecoverySuite) TestSourceAdvanceFailureRestoresInitialState() {
 func (s *UpdateRecoverySuite) TestUpgradeThenAddFailureRestoresInitialState() {
 	state, profile, source, desired := s.updateFixture(true)
 	s.T().Setenv("FAIL_ADD", "1")
-	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
+	report, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Error(err)
+	s.Empty(report.PackageChanges, "rolled-back package changes are not completed updates")
 	s.assertOriginal(source, profile)
 	s.assertJournalCleared(state)
 }
@@ -270,8 +271,9 @@ func (s *UpdateRecoverySuite) TestConfigurationFailureKeepsSuccessfulUpdateCommi
 	hook := filepath.Join(desired.CatalogDir, "failed-post")
 	// #nosec G306 -- Executable fixture is private and only verifies post-update failure.
 	s.Require().NoError(os.WriteFile(hook, []byte("#!/bin/sh\nexit 9\n"), 0o700))
-	_, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
+	report, err := Update(context.Background(), desired, io.Discard, ConfigurationOptions{})
 	s.Require().Error(err)
+	s.Equal([]PackageChange{{Action: "updated", Descriptor: "hello", Name: "hello"}}, report.PackageChanges)
 	link, readErr := os.Readlink(profile)
 	s.Require().NoError(readErr)
 	s.Equal("profile-2-link", link)

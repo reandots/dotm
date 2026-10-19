@@ -6,7 +6,7 @@ Examples use the default data directory. Add `--data-dir /path/to/data` for anot
 
 ## Output and verbosity
 
-Normal package status and lifecycle reports show application state and configuration outcomes without Nix URLs, generated entry IDs, or store-path inventories. Use global `-v` / `--verbose` before or after the command for detailed reports:
+Default mutating `install`, `update`, and `remove-extras` reports describe package effects observed during this invocation, not the full installed inventory. They explicitly say when no package changed; unchanged installed inventory is available only with global `-v` / `--verbose`. Configuration work gives one overall completion/failure summary rather than per-application success boilerplate; it names changed destination paths and source changes, while unchanged successful paths and successful ignore exclusions stay in verbose details. Completing a configuration cycle or running hooks does not mean files changed. Verbose mode adds detailed reports:
 
 ```sh
 ./dotm install --verbose
@@ -14,7 +14,7 @@ Normal package status and lifecycle reports show application state and configura
 ./dotm -viur
 ```
 
-Success, warning, and failure labels use color only in a terminal; set `NO_COLOR` to disable it. Redirected output has no color escapes. Errors, warnings, dependency blockers, retained backups, and native/hook diagnostics remain visible without `--verbose`. An application reported as installed describes current state, not necessarily a package installed by this invocation. Package readiness does not prove configuration synchronization.
+Success, warning, and failure labels use color only in a terminal; set `NO_COLOR` to disable it. Redirected output has no color escapes. Errors, warnings, dependency blockers, retained backups, partial effects, and actual native/hook output remain visible without `--verbose`. `status`, `show`, `configs`, `apps`, `doctor`, and lint/check commands retain the state or findings requested; verbosity adds detail, not a substitute for the requested report. Package readiness does not prove configuration synchronization.
 
 ## Command reference
 
@@ -26,7 +26,7 @@ Success, warning, and failure labels use color only in a terminal; set `NO_COLOR
 | `status` | Inspect packages and readiness without mutation; not a file-content check |
 | `install` | Run hooks, add missing desired packages, then synchronize eligible configurations |
 | `update` | Advance the source and update installed desired applications plus their complete logical dependencies; synchronize all eligible desired configurations |
-| `update cfg` | Synchronize eligible configurations without package work or package pre-hooks |
+| `update cfg` | Synchronize eligible configurations without package work or package pre-hooks; reports one overall configuration outcome, not package inventory |
 | `cfg lint [--source /absolute/checkout]` | Passive local source/settings validation; no manifests, selection, Nix, or chezmoi executable required |
 | `files lint` | Check declarations, effective native rules, and published policy integration |
 | `files refresh [--update-source]` | Build/check/publish policy; only the explicit flag acquires/updates source |
@@ -67,7 +67,7 @@ Failures appear once on stderr; warnings, results and blocked checks use stdout.
 
 Status distinguishes installed, partial, missing, and package-free applications, dependency readiness, and removable extras. Use `status --verbose` for explicit native entries, descriptors, source URLs, and store paths. Configuration readiness includes the entire dependency closure; it is not an installation-history marker or proof that files are synchronized.
 
-With healthy source state, installation adds only missing descriptors, including missing pieces of multi-package applications, and preserves installed entries, extras, and the source lock. Repeating a satisfied install still runs configured hooks/configuration phases. Ambiguous desired native entries fail rather than being automatically repaired.
+With healthy source state, installation adds only missing descriptors, including missing pieces of multi-package applications, and preserves installed entries, extras, and the source lock. Repeating a satisfied install still runs configured hooks/configuration phases; the default package report says no package changed rather than repeating the installed inventory. Configuration reporting summarizes the cycle and shows actual applied paths/source changes when reported, without implying that completed hooks or a cycle changed files. Ambiguous desired native entries fail rather than being automatically repaired.
 
 ## Update
 
@@ -79,7 +79,7 @@ With healthy source state, installation adds only missing descriptors, including
 
 Update advances the machine-local `nixos-unstable` lock. It uses active package evidence: partial applications are completed, and current components/transitive logical companions are included even if newly added. A shared active descriptor can seed several applications. An installed companion does not select its absent parent; wholly absent independent applications remain for `install`. Inactive entries alone do not seed updates. Extras retain their versions. With no installed desired applications, package work is a no-op, but eligible configuration work still runs.
 
-Source-lock changes and package store-path changes are reported separately: advancing the source need not change package versions. Package/source failures attempt recovery; later configuration failures preserve completed package work. See [recovery](troubleshooting.md).
+Source-lock changes and package store-path changes are reported separately: advancing the source need not change package versions. Default update reports only package effects observed in this invocation and explicitly says when no package changed; the unchanged installed inventory requires `-v` / `--verbose`. Package/source failures attempt recovery; later configuration failures preserve completed package work. See [recovery](troubleshooting.md).
 
 ## Switch configurations and remove extras
 
