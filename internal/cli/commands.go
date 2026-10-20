@@ -130,7 +130,7 @@ func (app *cli) command(selected *string) *cobra.Command {
 	refresh.Long = "Save and check file rules. Runs trusted templates.\n" +
 		"Does not apply config files.\n\n" +
 		"Uses the local source by default. --update-source can download changes.\n" +
-		"Commit and publish local source changes first; dotm never discards them."
+		"Commit and push local source changes first; dotm never discards them."
 	refresh.Flags().BoolVar(&app.Files.Refresh.UpdateSource, "update-source", false,
 		"Download or update the shared source first")
 	add(files, "status", "Refresh local file rules and show changed or untracked files", "", "files status").Long =

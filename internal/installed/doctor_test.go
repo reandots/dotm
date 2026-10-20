@@ -28,7 +28,7 @@ func (s *DoctorSuite) TestMissingNixGitAndChezmoiAreIndependentAndReadOnly() {
 	}
 	s.Equal(SeverityInternal, byCheck["nix"].Severity)
 	s.Equal(SeverityInternal, byCheck["chezmoi"].Severity)
-	s.Contains(byCheck["profile"].Message, "absent")
+	s.Zero(byCheck["profile"].Severity)
 	s.Equal(SeverityInternal, byCheck["git"].Severity)
 	s.NoFileExists(filepath.Join(root, "state", "nix"))
 }

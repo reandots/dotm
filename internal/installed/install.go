@@ -86,7 +86,7 @@ func install(
 		operationErr = prepareSource(ctx, source, system, retained, allowInit, stderr)
 	} else {
 		fmt.Fprintf(stderr, "Source recovery: %s; existing entries are external. "+
-			"Installing all desired packages from current nixos-unstable in a new source.\n", state.Reason)
+			"Installing all desired packages from the current nixos-unstable in a new source.\n", state.Reason)
 		source, operationErr = freshSource(ctx, base, system, desired.Packages, stderr)
 	}
 	if operationErr == nil {

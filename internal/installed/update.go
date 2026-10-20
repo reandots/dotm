@@ -45,7 +45,7 @@ func Update(
 	}()
 	selected := updateSelection(before, desired)
 	if len(selected.Packages) == 0 {
-		fmt.Fprintln(stderr, "Update: no installed desired applications; source and profile unchanged.")
+		fmt.Fprintln(stderr, "Update: no desired applications are installed; source and profile are unchanged.")
 		return configure(ctx, desired, before, stderr, options)
 	}
 	base, err := stateHome()
@@ -89,7 +89,7 @@ func Update(
 		restoreCtx := context.WithoutCancel(ctx)
 		if restoreErr := recovery.rollback(restoreCtx, stderr); restoreErr != nil {
 			resultErr = operationError(SeverityInternal, errors.Join(resultErr, fmt.Errorf(
-				"update recovery incomplete; further mutations require successful recovery: %w", restoreErr,
+				"update recovery is incomplete; further changes require successful recovery: %w", restoreErr,
 			)))
 		}
 		var inspectErr error

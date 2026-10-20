@@ -51,7 +51,7 @@ func RemoveExtras(
 	}
 	if !reflect.DeepEqual(before.Entries, current.Entries) {
 		return current, fmt.Errorf(
-			"profile changed during removal planning; rerun remove-extras to review the current entries",
+			"profile changed while planning removal; run remove-extras again to review the current entries",
 		)
 	}
 	args := []string{"profile", "remove", "--profile", before.Profile, "--"}
@@ -61,7 +61,7 @@ func RemoveExtras(
 	var operationErr error
 	if err := cmd.Run(); err != nil {
 		operationErr = fmt.Errorf(
-			"nix profile remove --profile %s: %w; no automatic rollback was attempted",
+			"nix profile remove --profile %s failed: %w; dotm did not try to restore the entries",
 			before.Profile,
 			err,
 		)
@@ -81,7 +81,7 @@ func RemoveExtras(
 	for _, entry := range after.Entries {
 		if removed[entry.Name] {
 			return after, fmt.Errorf(
-				"removal finished but approved entry %q remains; inspect the profile before retrying",
+				"removal finished but approved entry %q is still present; inspect the profile before retrying",
 				entry.Name,
 			)
 		}
@@ -136,8 +136,8 @@ func confirmRemovals(units []removalUnit, yes bool, in io.Reader, out io.Writer)
 	}
 	if _, err := fmt.Fprintln(
 		out,
-		"Removal candidates (shared entries require approval of every listed application; "+
-			"nothing changes until all answers are collected):",
+		"Removal candidates. Shared entries require approval for every listed application. "+
+			"Nothing changes until all answers are collected:",
 	); err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func confirmRemovals(units []removalUnit, yes bool, in io.Reader, out io.Writer)
 			if _, err := fmt.Fprintf(out, "Application %q:\n", unit.application); err != nil {
 				return nil, err
 			}
-		} else if _, err := fmt.Fprintln(out, "Native entry outside extra application groups:"); err != nil {
+		} else if _, err := fmt.Fprintln(out, "Native entry not grouped under an extra application:"); err != nil {
 			return nil, err
 		}
 		for _, entry := range unit.entries {

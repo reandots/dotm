@@ -164,8 +164,8 @@ func beginUpdateRecovery(ctx context.Context, profile string, stderr io.Writer) 
 	if err := durableCreate(journalPath, b, 0o600); err != nil {
 		return nil, fmt.Errorf("publish update recovery journal: %w", err)
 	}
-	fmt.Fprintln(stderr, "Update recovery snapshot saved; package/source state can be restored. "+
-		"User data is not restored.")
+	fmt.Fprintln(stderr, "Saved update recovery snapshot. Package and source state can be restored. "+
+		"User data cannot be restored.")
 	return &updateRecovery{path: journalPath, data: j}, nil
 }
 
@@ -219,7 +219,7 @@ func (r *updateRecovery) rollback(ctx context.Context, stderr io.Writer) error {
 		return nil
 	}
 	if r.finalized {
-		fmt.Fprintln(stderr, "Final package/source state retained; recovery journal cleanup failed. "+
+		fmt.Fprintln(stderr, "Kept final package and source state, but could not remove the recovery journal. "+
 			"User data was not restored.")
 		return nil
 	}
@@ -253,8 +253,8 @@ func recoverJournal(ctx context.Context, path string, stderr io.Writer) error {
 	if err := validateJournal(j, base); err != nil {
 		return fmt.Errorf("corrupt pending update recovery journal: %w", err)
 	}
-	fmt.Fprintln(stderr, "Recovering interrupted update: restoring original native generation and source files; "+
-		"user data is not restored.")
+	fmt.Fprintln(stderr, "Recovering interrupted update: restoring the original native generation and source files. "+
+		"User data cannot be restored.")
 	return restoreJournal(ctx, path, j, stderr)
 }
 

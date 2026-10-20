@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-var errMutationBusy = errors.New("another dotm mutation is running")
+var errMutationBusy = errors.New("another dotm operation is running")
 
 type mutationKey struct{}
 

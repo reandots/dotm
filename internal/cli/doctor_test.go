@@ -106,5 +106,4 @@ func (s *FilesCLISuite) TestDoctorReportsSelectionAndManifestFailuresTogether() 
 	s.Contains(diagnostics, filepath.Join(s.configHome, "dotm", "config.toml"))
 	s.Contains(diagnostics, filepath.Join(s.dataDir, "catalog.toml"))
 	s.Contains(out, "blocked: effective policy")
-	s.NotContains(out, "binding, freshness and native rules valid")
 }

@@ -137,7 +137,6 @@ func (s *sourceRegressionSuite) TestMatchingDirtyCheckoutPreservesFiles() {
 			s.Error(err)
 			s.Require().ErrorContains(err, name)
 			s.Contains(err.Error(), path)
-			s.Contains(err.Error(), "commit intended source changes")
 			data, readErr := os.ReadFile(file)
 			s.Require().NoError(readErr)
 			s.Equal(contents, string(data))

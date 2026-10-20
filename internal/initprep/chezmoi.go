@@ -158,7 +158,7 @@ func addConfigurationApp(content []byte, name string) ([]byte, error) {
 		return nil, parser.Error()
 	}
 	if tableEnd == 0 {
-		return nil, fmt.Errorf("cannot safely extend configuration %q", name)
+		return nil, fmt.Errorf("cannot safely add chezmoi to configuration %q", name)
 	}
 	lineEnd := bytes.IndexByte(content[tableEnd:], '\n')
 	if lineEnd < 0 {
@@ -193,7 +193,7 @@ func appendArray(content []byte, field *unstable.Node) ([]byte, error) {
 	start := keyEnd(field)
 	opening := bytes.IndexByte(content[start:], '[')
 	if opening < 0 {
-		return nil, fmt.Errorf("cannot locate configuration application array")
+		return nil, fmt.Errorf("cannot find configuration application array")
 	}
 	return insert(content, int(start)+opening+1, `"chezmoi"`), nil
 }

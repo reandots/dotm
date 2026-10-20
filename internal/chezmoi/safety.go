@@ -62,7 +62,7 @@ func inspectCheckoutMode(ctx context.Context, path string, requireClean bool) (c
 	}
 	for _, entry := range strings.Split(flags, "\x00") {
 		if entry != "" && !strings.HasPrefix(entry, "H ") {
-			return state, fmt.Errorf("source index hides working-copy state (skip-worktree/assume-unchanged)")
+			return state, fmt.Errorf("source index contains hidden working-copy files (skip-worktree/assume-unchanged)")
 		}
 	}
 	stages, err := git(ctx, path, "ls-files", "--stage", "-z")
@@ -82,8 +82,8 @@ func inspectCheckoutMode(ctx context.Context, path string, requireClean bool) (c
 		}
 		if status != "" {
 			var message strings.Builder
-			fmt.Fprintf(&message, "source repository %q is dirty (changed, untracked, or ignored data); "+
-				"refusing synchronization:\n", path)
+			fmt.Fprintf(&message, "source repository %q contains changed, untracked, or ignored data; "+
+				"refusing to sync it:\n", path)
 			for _, entry := range strings.Split(status, "\x00") {
 				if len(entry) >= 4 {
 					kind := "changed"
@@ -96,7 +96,7 @@ func inspectCheckoutMode(ctx context.Context, path string, requireClean bool) (c
 					fmt.Fprintf(&message, "  %s: %q\n", kind, entry[3:])
 				}
 			}
-			message.WriteString("Review these paths; commit intended source changes and move unrelated data " +
+			message.WriteString("Review these paths. Commit intended source changes and move unrelated data " +
 				"outside the checkout before retrying. No files were discarded.")
 			return state, fmt.Errorf("%s", message.String())
 		}
@@ -170,8 +170,8 @@ func checkUntrackedDirectories(root, files string) error {
 		}
 		if !known[relative] {
 			return fmt.Errorf("source repository %q has untracked data at %q; refusing synchronization; "+
-				"review this path and move unrelated data outside the checkout before retrying "+
-				"(Git does not track empty directories); no files were discarded", root, relative)
+				"move unrelated data outside the checkout before retrying. Git does not track empty directories; "+
+				"no files were discarded", root, relative)
 		}
 		return nil
 	})

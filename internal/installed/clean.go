@@ -80,7 +80,7 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 	if options.GC {
 		if _, outputErr := fmt.Fprintln(
 			stderr,
-			"Warning: store-wide GC may delete unrelated unrooted objects throughout the shared Nix store.",
+			"Warning: store-wide garbage collection may delete unrelated unrooted data from the shared Nix store.",
 		); outputErr != nil {
 			return outputErr
 		}
@@ -89,7 +89,7 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		if options.GC {
 			if _, outputErr := fmt.Fprintln(
 				out,
-				"GC dry-run uses current roots before pruning; additional objects may become eligible after pruning.",
+				"GC dry run uses current roots before pruning. More objects may become eligible after pruning.",
 			); outputErr != nil {
 				return outputErr
 			}
@@ -116,8 +116,7 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		return fmt.Errorf("revalidate profile history: %w", err)
 	}
 	if !reflect.DeepEqual(before, current) {
-		return fmt.Errorf("profile history changed during clean planning; " +
-			"rerun clean to review the current generations")
+		return fmt.Errorf("profile history changed while planning clean; rerun clean to review the current generations")
 	}
 	if len(selected) > 0 {
 		args := []string{"--profile", profile, "--delete-generations"}
@@ -157,7 +156,7 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		}
 		if !reflect.DeepEqual(expected, after) {
 			return fmt.Errorf(
-				"profile history after pruning differs from the approved retained generations; GC was not started",
+				"profile history after pruning does not match the approved retained generations; GC was not started",
 			)
 		}
 	}
@@ -165,9 +164,9 @@ func Clean(ctx context.Context, options CleanOptions, in io.Reader, out, stderr 
 		cmd := exec.CommandContext(ctx, "nix", "store", "gc")
 		cmd.Stdout, cmd.Stderr = stderr, stderr
 		if runErr := cmd.Run(); runErr != nil {
-			return fmt.Errorf("nix store gc: %w; any completed history pruning remains in effect", runErr)
+			return fmt.Errorf("nix store gc: %w; completed history pruning remains in effect", runErr)
 		}
-		_, err = fmt.Fprintln(out, "Store-wide garbage collection completed.")
+		_, err = fmt.Fprintln(out, "Store-wide garbage collection finished.")
 	}
 	return err
 }
@@ -312,12 +311,12 @@ func formatGenerations(numbers []int) string {
 func confirmClean(in io.Reader, out io.Writer) (bool, error) {
 	reader := bufio.NewReader(in)
 	for {
-		if _, err := fmt.Fprint(out, "Proceed with clean? [y/N/q] "); err != nil {
+		if _, err := fmt.Fprint(out, "Continue with clean? [y/N/q] "); err != nil {
 			return false, err
 		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return false, fmt.Errorf("clean cancelled before mutation: read confirmation: %w", err)
+			return false, fmt.Errorf("clean cancelled before changes: read confirmation: %w", err)
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "y", "yes":
@@ -325,7 +324,7 @@ func confirmClean(in io.Reader, out io.Writer) (bool, error) {
 		case "", "n", "no":
 			return false, nil
 		case "q", "quit":
-			return false, fmt.Errorf("clean cancelled before mutation")
+			return false, fmt.Errorf("clean cancelled before changes")
 		default:
 			if _, err := fmt.Fprintln(out, "Answer y/yes, n/no (default), or q/quit to cancel."); err != nil {
 				return false, err

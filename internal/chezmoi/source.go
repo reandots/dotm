@@ -73,7 +73,7 @@ func (m sourceManager) sync(
 	}
 	// Fixed recovery evidence must never be overwritten by another invocation.
 	if _, markerErr := os.Lstat(m.handoffPath()); !errors.Is(markerErr, os.ErrNotExist) {
-		return result, fmt.Errorf("source handoff requires inspection at %s (checkout may be in old): %w",
+		return result, fmt.Errorf("cannot continue: inspect source handoff at %s (checkout may be in old): %w",
 			m.handoffPath(), handoffError(markerErr))
 	}
 	info, err := os.Lstat(m.path)

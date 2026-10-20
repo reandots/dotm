@@ -68,7 +68,7 @@ func lintSource(source string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "Configuration source: %s\n", result.SourceDir)
 	if len(result.Diagnostics) == 0 {
-		printOutcome(out, "OK", "Configuration policy: valid (templates are not evaluated)", green)
+		printOutcome(out, "OK", "Configuration policy: valid (templates were not run)", green)
 		return nil
 	}
 	return &installed.OperationError{Severity: installed.SeverityConfiguration, Err: result.Err()}
@@ -85,7 +85,7 @@ func confirmReplacement(in io.Reader, out io.Writer) chezmoi.ConfirmReplacement 
 		}
 		if _, err := fmt.Fprintf(out,
 			"Replace configuration checkout %s?\nOld repository: %s\nNew repository: %s\n"+
-				"Delete the old checkout and replace it? Type yes to approve: ",
+				"Keep the old checkout as a backup and use the new repository? Type yes to confirm: ",
 			replacement.Path, replacement.OldRepository, replacement.Repository); err != nil {
 			return false, err
 		}
@@ -107,14 +107,14 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 	if len(result.Applications) == 0 && result.SourceStage.Status == "" {
 		return
 	}
-	fmt.Fprintf(out, "Configuration outcome: %s\n", severityName(result.Severity))
+	fmt.Fprintf(out, "Configuration result: %s\n", severityName(result.Severity))
 	fmt.Fprintf(out, "Source stage: %s", result.SourceStage.Status)
 	if result.Source.Path != "" {
 		fmt.Fprintf(out, " (%s; changed=%t)", result.Source.Path, result.Source.Changed)
 	}
 	fmt.Fprintln(out)
 	if result.Source.Backup != "" {
-		fmt.Fprintf(out, "Retained source backup: %s\n", result.Source.Backup)
+		fmt.Fprintf(out, "Source backup kept at: %s\n", result.Source.Backup)
 	}
 	fmt.Fprintf(out, "Files policy stage: %s\n", result.PolicyStage.Status)
 	// Errors retain their wrapped return path; only warnings belong in reports.
@@ -126,7 +126,7 @@ func printConfiguration(out io.Writer, result installed.ConfigurationResult) {
 	for _, app := range result.Applications {
 		fmt.Fprintf(out, "  %s: ", app.ID)
 		if !app.Eligible {
-			fmt.Fprintf(out, "expected skip; package requirements not ready: %s\n", list(app.BlockedBy))
+			fmt.Fprintf(out, "skipped; required packages are not ready: %s\n", list(app.BlockedBy))
 			continue
 		}
 		fmt.Fprintln(out)
@@ -178,10 +178,10 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 	}
 	printOutcome(out, label, "Configuration: "+outcome, shade)
 	if result.Source.Changed {
-		fmt.Fprintf(out, "  Source synchronized: %s\n", result.Source.Path)
+		fmt.Fprintf(out, "  Source updated: %s\n", result.Source.Path)
 	}
 	if result.Source.Backup != "" {
-		fmt.Fprintf(out, "  Retained source backup: %s\n", result.Source.Backup)
+		fmt.Fprintf(out, "  Source backup kept at: %s\n", result.Source.Backup)
 	}
 	for _, diagnostic := range result.Policy.Diagnostics {
 		if diagnostic.Severity == manifest.FileWarning {
@@ -189,18 +189,18 @@ func printConfigurationMode(out io.Writer, result installed.ConfigurationResult,
 		}
 	}
 	if result.SourceStage.Status == installed.StageFailed {
-		fmt.Fprintf(out, "  Source synchronization failed: %s\n", result.Source.Path)
-		fmt.Fprintln(out, "  Configurations were not applied; "+
-			"completed package and pre-configuration hook effects remain.")
+		fmt.Fprintf(out, "  Source update failed: %s\n", result.Source.Path)
+		fmt.Fprintln(out, "  Config files were not applied. "+
+			"Completed package changes and pre-config hook changes were not undone.")
 		return
 	}
 	if result.PolicyStage.Status == installed.StageFailed {
-		fmt.Fprintln(out, "  File-policy checks failed; configurations were not applied.")
+		fmt.Fprintln(out, "  File rule checks failed; config files were not applied.")
 		return
 	}
 	for _, app := range result.Applications {
 		if !app.Eligible {
-			fmt.Fprintf(out, "  %s %s: package requirements not ready; blocked by %s\n",
+			fmt.Fprintf(out, "  %s %s: required packages are not ready; blocked by %s\n",
 				colored(out, "Skipped", yellow), app.ID, list(app.BlockedBy))
 			continue
 		}
@@ -250,11 +250,11 @@ func severityName(severity installed.Severity) string {
 	case installed.SeveritySuccess:
 		return "success"
 	case installed.SeverityConfiguration:
-		return "configuration failure (partial work may have completed)"
+		return "configuration failed (some changes may have completed)"
 	case installed.SeverityInstallation:
-		return "installation failure"
+		return "installation failed"
 	default:
-		return "dotm failure"
+		return "dotm failed"
 	}
 }
 

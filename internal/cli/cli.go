@@ -90,17 +90,17 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 	// Parsing and dispatch have no manifest or backend side effects.
 	hasOperations := app.InstallMissing || app.UpdateInstalled || app.RemoveExtra
 	if command == "operations" && !hasOperations {
-		return fmt.Errorf("expected a command or at least one of -i, -u, -r")
+		return fmt.Errorf("choose a command or use at least one of -i, -u, -r")
 	}
 	if command != "operations" && hasOperations {
-		return fmt.Errorf("operation flags cannot be combined with a subcommand")
+		return fmt.Errorf("use -i, -u, and -r without a subcommand")
 	}
 	if app.Yes && !app.RemoveExtra && command != "remove-extras" && command != "clean" {
 		return fmt.Errorf("--yes requires -r, remove-extras, or clean")
 	}
 	if command == "clean" {
 		if app.Clean.Keep < 0 {
-			return fmt.Errorf("--keep must be nonnegative")
+			return fmt.Errorf("--keep must be 0 or greater")
 		}
 		return installed.Clean(context.Background(), installed.CleanOptions{
 			Keep:   app.Clean.Keep,
@@ -208,7 +208,7 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 			}
 			fmt.Fprintf(out, "  %s [%s]\n", item.ID, reason)
 		}
-		fmt.Fprintln(out, "Nix packages (deduplicated descriptors):")
+		fmt.Fprintln(out, "Nix packages (without duplicates):")
 		if len(resolved.Packages) == 0 {
 			fmt.Fprintln(out, "  (none)")
 		}
@@ -333,9 +333,9 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 		if !entry.Active {
 			state = "inactive"
 		}
-		update := "unavailable"
+		update := "no"
 		if entry.Updateable {
-			update = "available"
+			update = "yes"
 		}
 		descriptor := entry.Descriptor
 		if descriptor == "" {
@@ -349,7 +349,7 @@ func printStatus(out io.Writer, name, path string, selected []string, report ins
 		}
 		fmt.Fprintf(out,
 			"  %s [%s; %s]\n    attribute: %s\n    source: %s\n    URL: %s\n    outputs: %s\n"+
-				"    store paths: %s\n    update recipe: %s\n",
+				"    store paths: %s\n    can update: %s\n",
 			entry.Name, state, descriptor, entry.AttrPath, entry.OriginalURL, entry.URL,
 			outputs, list(entry.StorePaths), update)
 	}
@@ -379,7 +379,8 @@ func printCompactStatus(out io.Writer, name string, report installed.Report) {
 		fmt.Fprintln(out)
 	}
 	if len(report.Extras) != 0 {
-		fmt.Fprintf(out, "  %s %d extra package entries; review with status --verbose or remove-extras.\n",
+		fmt.Fprintf(out, "  %s %d extra package entries; "+
+			"review with 'dotm status --verbose' or 'dotm remove-extras'.\n",
 			colored(out, "Warning:", yellow), len(report.Extras))
 	}
 }
@@ -415,7 +416,8 @@ func printPackageChanges(out io.Writer, command string, report installed.Report,
 		}
 	}
 	if len(report.Extras) != 0 {
-		fmt.Fprintf(out, "  %s %d extra package entries; review with status --verbose or remove-extras.\n",
+		fmt.Fprintf(out, "  %s %d extra package entries; "+
+			"review with 'dotm status --verbose' or 'dotm remove-extras'.\n",
 			colored(out, "Warning:", yellow), len(report.Extras))
 	}
 }

@@ -42,7 +42,7 @@ func SetupSource(ctx context.Context, repository string, confirm ConfirmReplacem
 		return SourceResult{Path: path}, err
 	}
 	if _, markerErr := os.Lstat(manager.handoffPath()); !errors.Is(markerErr, os.ErrNotExist) {
-		return SourceResult{Path: path}, fmt.Errorf("source handoff requires inspection at %s: %w",
+		return SourceResult{Path: path}, fmt.Errorf("cannot continue: inspect source handoff at %s: %w",
 			manager.handoffPath(), handoffError(markerErr))
 	}
 	if _, statErr := os.Lstat(path); statErr == nil {

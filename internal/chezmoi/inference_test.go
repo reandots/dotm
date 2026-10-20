@@ -81,5 +81,5 @@ func (s *inferenceSuite) TestRejectsUnsafeSourceAndCheckout() {
 	s.Require().NoError(os.WriteFile(filepath.Join(checkout, "untracked"), []byte("unsafe"), 0o600))
 	_, err = InferRepository(context.Background(), checkout)
 	s.Error(err)
-	s.Contains(err.Error(), "dirty")
+	s.ErrorContains(err, checkout)
 }

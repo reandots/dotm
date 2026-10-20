@@ -98,18 +98,18 @@ func configure(
 		strings.TrimSpace(options.Source.Repository) == "") {
 		result.Severity = SeverityInternal
 		current.Configuration = result
-		return current, operationError(SeverityInternal, errors.New("configuration targets require a chezmoi source"))
+		return current, operationError(SeverityInternal, errors.New("configuration targets need a chezmoi source"))
 	}
 	byID := make(map[string]int, len(desired.Applications))
 	if len(current.Applications) != len(desired.Applications) {
-		return current, operationError(SeverityInternal, errors.New("incomplete package readiness report"))
+		return current, operationError(SeverityInternal, errors.New("package readiness report is incomplete"))
 	}
 	result.Applications = make([]ConfigurationApplication, len(desired.Applications))
 	for i, app := range desired.Applications {
 		// Inspect preserves the complete resolved application order.
 		status := &current.Applications[i]
 		if status.ID != app.ID {
-			return current, operationError(SeverityInternal, fmt.Errorf("missing package readiness for %q", app.ID))
+			return current, operationError(SeverityInternal, fmt.Errorf("package readiness is missing for %q", app.ID))
 		}
 		byID[app.ID] = i
 		result.Applications[i] = ConfigurationApplication{
@@ -168,7 +168,7 @@ func configure(
 		if backendErr != nil {
 			sourceErr = backendErr
 		} else if backend == "" {
-			sourceErr = errors.New("chezmoi executable unavailable; run dotm init")
+			sourceErr = errors.New("chezmoi executable is unavailable; run dotm init")
 		} else {
 			ctx = chezmoi.WithExecutable(ctx, backend)
 		}
@@ -180,13 +180,13 @@ func configure(
 		}
 		result.SourceStage = StageResult{Status: StageSuccess}
 		if sourceErr != nil {
-			globalErr = fmt.Errorf("synchronize configuration source: %w", sourceErr)
+			globalErr = fmt.Errorf("sync configuration source: %w", sourceErr)
 			result.SourceStage = StageResult{Status: StageFailed, Err: globalErr}
 			result.Apply.Targets = unappliedTargets(desired.Targets, result.Applications, byID, globalErr.Error())
 		} else {
 			var input chezmoi.PolicyInput
 			if options.Data == nil {
-				globalErr = errors.New("configuration policy requires the complete catalog")
+				globalErr = errors.New("configuration policy needs the full catalog")
 				failureSeverity = SeverityInternal
 			} else {
 				input, globalErr = chezmoi.PolicyInputFor(options.Data, manifest.Configuration{
@@ -202,7 +202,7 @@ func configure(
 				if policyHostFailure(globalErr) {
 					failureSeverity = SeverityInternal
 				}
-				globalErr = fmt.Errorf("refresh configuration files policy: %w", globalErr)
+				globalErr = fmt.Errorf("update configuration file policy: %w", globalErr)
 				result.PolicyStage = StageResult{Status: StageFailed, Err: globalErr}
 				result.Apply.Targets = unappliedTargets(desired.Targets, result.Applications, byID, globalErr.Error())
 			}

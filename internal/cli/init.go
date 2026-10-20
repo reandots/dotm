@@ -16,10 +16,10 @@ import (
 )
 
 func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Writer) (resultErr error) {
-	stage := "mutation ownership"
+	stage := "locking changes"
 	defer func() {
 		if resultErr != nil {
-			resultErr = fmt.Errorf("init failed at %s; completed effects above are retained: %w", stage, resultErr)
+			resultErr = fmt.Errorf("init failed at %s; completed changes were not undone: %w", stage, resultErr)
 		}
 	}()
 	ctx, release, err := installed.BeginMutation(context.Background())
@@ -98,13 +98,13 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	if verboseOutput(out) {
 		fmt.Fprintf(out, "Chezmoi executable: %s\n", executable)
 	}
-	stage = "source acquisition"
+	stage = "source setup"
 	source, err := chezmoi.SetupSource(ctx, plan.Repository, confirmReplacement(in, out))
 	if source.Changed {
-		fmt.Fprintf(out, "Checkout acquired: %s\n", source.Path)
+		fmt.Fprintf(out, "Source checkout ready: %s\n", source.Path)
 	}
 	if source.Backup != "" {
-		fmt.Fprintf(out, "Retained checkout backup: %s\n", source.Backup)
+		fmt.Fprintf(out, "Checkout backup kept at: %s\n", source.Backup)
 	}
 	if err != nil {
 		return err
@@ -121,11 +121,12 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	// Source edits remain user-owned even if a later stage fails.
 	if sourceEdited {
 		fmt.Fprintln(out, colored(out,
-			"Action required: commit reviewed checkout changes before synchronization.", yellow))
-		fmt.Fprintf(out, "Review source edits at %s, including generated .chezmoiignore changes, "+
-			"and commit intended source changes yourself before install, update, update cfg, "+
-			"or files refresh --update-source; these operations require a clean checkout. "+
-			"Move unrelated data outside the checkout. No source changes are committed automatically.\n", source.Path)
+			"Action required: review and commit source changes before updating the source.", yellow))
+		fmt.Fprintf(out, "Review changes at %s, including generated .chezmoiignore changes. "+
+			"Commit the changes you want to keep before install, update, update cfg, "+
+			"or files refresh --update-source; these commands require a clean checkout. "+
+			"Move unrelated data outside the checkout. dotm does not commit source changes automatically.\n",
+			source.Path)
 	}
 	if err != nil {
 		return err
@@ -162,12 +163,13 @@ func runInit(options initCmd, dataDir string, in io.Reader, out, stderr io.Write
 	if err != nil {
 		return err
 	}
-	stage = "normal chezmoi discovery"
+	stage = "checking normal chezmoi commands"
 	if err = chezmoi.VerifyDiscovery(ctx, source.Path, refreshed.Policy); err != nil {
 		return err
 	}
-	printOutcome(out, "OK", "Init complete; only missing chezmoi and its dependencies may have been installed; "+
-		"no configuration hooks or destination configurations were applied.", green)
+	printOutcome(out, "OK", "Init complete. "+
+		"Only missing chezmoi packages and their dependencies may have been installed. "+
+		"No config hooks were run and no config files were applied.", green)
 	return nil
 }
 

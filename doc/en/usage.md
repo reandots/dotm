@@ -26,6 +26,8 @@ For persistent use, install the generated script according to the shell's comple
 
 ## Output and verbosity
 
+dotm messages use plain technical English in help, results, warnings, errors, and confirmation prompts. Command names, flags, configuration fields, and status values keep their technical names. Output from external tools and user hooks is shown unchanged.
+
 Default mutating `install`, `update`, and `remove-extras` reports describe package effects observed during this invocation, not the full installed inventory. They explicitly say when no package changed; unchanged installed inventory is available only with global `-v` / `--verbose`. Configuration work gives one overall completion/failure summary rather than per-application success boilerplate; it names changed destination paths and source changes, while unchanged successful paths and successful ignore exclusions stay in verbose details. Completing a configuration cycle or running hooks does not mean files changed. Verbose mode adds detailed reports:
 
 ```sh

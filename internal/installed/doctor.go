@@ -80,15 +80,15 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 			err = fmt.Errorf("configured store %q is not the daemon", store.URL)
 		}
 		if err != nil {
-			message := fmt.Sprintf("ordinary-user daemon store operation failed: %s", commandError(err))
-			remedy := "Prepare ordinary-user access to the Nix daemon through host provisioning."
+			message := fmt.Sprintf("Nix daemon store operation failed for a regular user: %s", commandError(err))
+			remedy := "Set up regular-user access to the Nix daemon through host provisioning."
 			add("nix-daemon", message, remedy, 3, false)
 		} else {
-			add("nix-daemon", "ordinary-user Nix daemon store operation succeeded", "", 0, false)
+			add("nix-daemon", "Nix daemon store operation succeeded for a regular user", "", 0, false)
 		}
 	}
 	if home, err := os.UserHomeDir(); err != nil || !filepath.IsAbs(home) {
-		add("home", "HOME must resolve to an absolute path",
+		add("home", "HOME must be an absolute path",
 			"Set HOME to the user's absolute home directory.", 1, false)
 	}
 	if cache := os.Getenv("XDG_CACHE_HOME"); cache != "" && !filepath.IsAbs(cache) {
@@ -99,7 +99,8 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 	if baseErr == nil {
 		if pendingErr := CheckPendingRecovery(); pendingErr != nil {
 			add("package recovery", pendingErr.Error(),
-				"Correct the prerequisite and resume a supported package operation; doctor never recovers.", 3, false)
+				"Fix the prerequisite, then run a supported package operation to recover; "+
+					"doctor does not recover packages.", 3, false)
 		}
 	}
 	profile := ""
@@ -114,8 +115,8 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 			message := fmt.Sprintf("cannot inspect native profile: %v", err)
 			add("profile", message, "Repair profile path permissions or dangling links.", 3, false)
 		case !exists:
-			add("profile", "standard native profile is absent (first use)",
-				"Run init after host prerequisites are prepared.", 0, false)
+			add("profile", "standard native profile is missing (first use)",
+				"Run init after preparing the host prerequisites.", 0, false)
 		default:
 			manifestErr := validateNativeManifest(profile)
 			if manifestErr != nil {
@@ -134,12 +135,12 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 	}
 	paths := filepath.SplitList(os.Getenv("PATH"))
 	if nixErr == nil && !containsClean(paths, filepath.Dir(nix)) {
-		message := "current process PATH does not include the resolved Nix executable directory"
-		remedy := "Prepare the login/session environment; this check covers only the current process."
+		message := "the current process PATH does not include the directory containing the Nix executable"
+		remedy := "Set up the login/session environment; this check covers only the current process."
 		add("session-path", message, remedy, 3, false)
 	}
 	if profile != "" {
-		remedy := "Prepare the login/session environment; this check covers only the current process."
+		remedy := "Set up the login/session environment; this check covers only the current process."
 		binDir := filepath.Join(profile, "bin")
 		if !containsClean(paths, binDir) {
 			add("profile-path", "current process PATH does not include profile bin directory "+binDir, remedy, 3, false)
@@ -160,7 +161,7 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 	if gitErr != nil {
 		add("git", "Git executable unavailable", "Install Git through host provisioning.", 3, false)
 	} else if err := probeGit(ctx, git); err != nil {
-		add("git", fmt.Sprintf("Git operational compatibility failed: %v", err),
+		add("git", fmt.Sprintf("Git compatibility check failed: %v", err),
 			"Repair the Git installation.", 3, false)
 	} else {
 		add("git", "Git is operational", "", 0, false)
@@ -173,7 +174,7 @@ func Diagnose(ctx context.Context) (findings []DoctorFinding, executable string)
 			"Run dotm init to acquire chezmoi after host prerequisites are prepared.", 3, false)
 	} else {
 		executable = selected
-		add("chezmoi", "chezmoi is operational and compatible", "", 0, false)
+		add("chezmoi", "chezmoi is ready and compatible", "", 0, false)
 	}
 	return findings, executable
 }

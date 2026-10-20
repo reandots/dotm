@@ -113,7 +113,7 @@ func expandGlobBraces(pattern string) ([]string, error) {
 			return fmt.Errorf("unmatched { in glob")
 		}
 		if len(result) >= 4096 {
-			return fmt.Errorf("glob alternative limit exceeded; effective check is incomplete")
+			return fmt.Errorf("glob alternative limit exceeded; the effective check would be incomplete")
 		}
 		result = append(result, current)
 		return nil

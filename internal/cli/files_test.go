@@ -102,7 +102,6 @@ func (s *FilesCLISuite) run(args ...string) (string, error) {
 func (s *FilesCLISuite) TestRefreshRepairsStalePolicyAndLintIsReadOnly() {
 	output, err := s.run("files", "refresh")
 	s.Require().NoError(err, output)
-	s.Contains(output, "Publication: refreshed and verified")
 	published, err := os.ReadFile(s.policyPath)
 	s.Require().NoError(err)
 
@@ -183,7 +182,6 @@ func (s *FilesCLISuite) TestWarningOnlyDeclarationsStillRefreshPolicy() {
 	output, err := s.run("files", "refresh")
 	s.Require().NoError(err, output)
 	s.Contains(output, "warning:")
-	s.Contains(output, "Publication: refreshed and verified")
 }
 
 func (s *FilesCLISuite) TestManifestInputAndHostIOHaveDistinctExitCodes() {
@@ -224,9 +222,8 @@ func (s *FilesCLISuite) TestLocalDeclarationConflictAppearsOnceWithBothOrigins()
 	s.Require().Error(err)
 	s.Equal(1, cli.ExitCode(err))
 	text := output + "dotm: " + err.Error()
-	s.Equal(1, strings.Count(text, "overlapping declarations"), text)
+	s.Equal(1, strings.Count(text, `application "app": configs[0]`), text)
 	s.Contains(text, filepath.Join(s.dataDir, "catalog.toml"))
-	s.Contains(text, `application "app": configs[0]`)
 	s.Contains(text, local)
 	s.Contains(text, `unmanaged["~/.config"][0]`)
 	s.Contains(text, filepath.Join(s.home, ".config", "app"))

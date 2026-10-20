@@ -101,7 +101,7 @@ func BootstrapChezmoi(
 		return result, nil
 	}
 	if _, gitErr := exec.LookPath("git"); gitErr != nil {
-		return result, fmt.Errorf("git is required for checkout acquisition; install Git before setup: %w", gitErr)
+		return result, fmt.Errorf("source setup requires Git; install Git first: %w", gitErr)
 	}
 	base, err := stateHome()
 	if err != nil {
@@ -172,7 +172,7 @@ func BootstrapChezmoi(
 		return result, err
 	}
 	if result.Executable == "" {
-		return result, fmt.Errorf("chezmoi installation completed but no executable was found")
+		return result, fmt.Errorf("chezmoi installation finished but no executable was found")
 	}
 	return result, nil
 }

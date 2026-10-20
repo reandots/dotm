@@ -159,7 +159,7 @@ func (m *FileModel) loadLocalContents(path string, content []byte, readErr error
 				Source: path, Field: "unmanaged", Parent: parent, Input: child, Index: i, Selected: true,
 			}
 			if child == "" || child == "." || child == ".." || strings.ContainsAny(child, "/\x00") {
-				m.invalid(declaration, fmt.Errorf("expected a literal immediate-child name"))
+				m.invalid(declaration, fmt.Errorf("must be a single child name (no /, NUL, . or ..)"))
 				continue
 			}
 			declaration.Path = filepath.Join(base, child)
@@ -192,7 +192,7 @@ func (m *FileModel) lint() {
 				severity = FileError
 			}
 			m.Diagnostics = append(m.Diagnostics, FileDiagnostic{
-				Severity: severity, Message: "overlapping declarations", Declaration: a, Related: &m.Declarations[j],
+				Severity: severity, Message: "declared paths overlap", Declaration: a, Related: &m.Declarations[j],
 			})
 		}
 	}

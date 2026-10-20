@@ -69,7 +69,7 @@ func PolicyPath(_ Policy) (string, error) {
 func CompilePolicy(ctx context.Context, source string, input PolicyInput) (Policy, error) {
 	var policy Policy
 	if input.Repository == "" || input.Configuration == "" {
-		return policy, fmt.Errorf("policy requires configured repository URL and dotm configuration identity")
+		return policy, fmt.Errorf("policy needs a configured repository URL and dotm configuration identity")
 	}
 	if err := input.Files.Err(); err != nil {
 		return policy, err

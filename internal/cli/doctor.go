@@ -22,7 +22,7 @@ type doctorReport struct {
 func (r *doctorReport) finding(f installed.DoctorFinding) {
 	text := f.Check + ": " + f.Message
 	if f.Remedy != "" {
-		text += "; remedy: " + f.Remedy
+		text += "; to fix: " + f.Remedy
 	}
 	if f.Severity != 0 {
 		r.failures = append(r.failures, &installed.OperationError{
@@ -91,11 +91,11 @@ func runDoctor(dataDir string, out io.Writer) error {
 	if r.check("source path", sourceErr, "Correct HOME/XDG_DATA_HOME in the session") {
 		validation, validationErr := chezmoi.ValidateSource(ctx, source)
 		passiveReady = r.check("source/settings safety", errors.Join(validation.Err(), validationErr),
-			"Use dotm init for a missing source; explicitly correct unsafe source entries or chezmoi settings")
+			"Run dotm init if the source is missing; fix unsafe source files or chezmoi settings manually")
 		if passiveReady {
 			integration, integrationErr := chezmoi.InspectIntegration(validation.SourceDir)
 			integrationReady = r.model("root integration", integration,
-				"Use dotm init for missing integration; explicitly correct damaged or unsafe integration")
+				"Run dotm init if integration is missing; fix damaged or unsafe integration manually")
 			if !r.check("root integration inspection", integrationErr, "Correct source access permissions") {
 				integrationReady = false
 			}
@@ -126,7 +126,7 @@ func runDoctor(dataDir string, out io.Writer) error {
 	} else {
 		var loadErr error
 		data, loadErr = manifest.Load(dataDir)
-		r.check("manifests", loadErr, "Use dotm init for absent inputs; correct malformed manifests explicitly")
+		r.check("manifests", loadErr, "Run dotm init for missing files; fix invalid manifests manually")
 	}
 	var config manifest.Configuration
 	if data != nil && selectionReady {
@@ -172,9 +172,9 @@ func runDoctor(dataDir string, out io.Writer) error {
 	if passiveReady && gitReady && config.Backend != "" {
 		repositoryReady = r.check("source repository",
 			chezmoi.ValidateRepository(ctx, source, config.Repository),
-			"Correct source identity explicitly; use dotm init for approved source acquisition or replacement")
+			"Check the source repository URL; run dotm init to download or replace the source with your approval")
 	} else {
-		r.blocked("source repository", "safe source, operational Git and configured repository are required")
+		r.blocked("source repository", "a safe source, working Git, and a configured repository are required")
 	}
 	reasons := make([]string, 0, 6)
 	if !passiveReady {
@@ -201,18 +201,19 @@ func runDoctor(dataDir string, out io.Writer) error {
 	}
 	policyModel, policyErr := chezmoi.DiagnosePolicy(ctx, source, input, integrationReady)
 	policyReady := r.model("effective policy", policyModel,
-		"Use dotm init for root integration, dotm files refresh for stale policy, or correct native rule conflicts")
-	if !r.check("policy execution", policyErr, "Correct source/settings or the reported backend failure") {
+		"Run dotm init for missing integration, dotm files refresh for outdated rules, or fix chezmoi rule conflicts")
+	if !r.check("policy execution", policyErr, "Fix the source, settings, or reported tool error") {
 		policyReady = false
-		r.blocked("effective policy", "backend or input failure prevented complete effective checking")
+		r.blocked("effective policy", "a tool or input error prevented a complete check")
 	}
 	if !integrationReady && policyErr == nil {
-		r.blocked("policy consumption", "owned root integration is missing or invalid; "+
-			"native rules and publication checked independently")
+		r.blocked("policy consumption", "dotm integration in the source root is missing or invalid; "+
+			"chezmoi rules and saved file rules were checked separately")
 	}
 	if policyReady && integrationReady {
 		r.finding(installed.DoctorFinding{
-			Check: "effective policy", Message: "binding, freshness and native rules valid",
+			Check:   "effective policy",
+			Message: "policy matches the current setup; saved rules and chezmoi rules are valid",
 		})
 	}
 	return errors.Join(r.failures...)

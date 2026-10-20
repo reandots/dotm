@@ -35,7 +35,7 @@ func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings
 	if len(local)+len(pending)+len(unknown) == 0 {
 		message := "Filesystem status: clean"
 		if warnings {
-			message = "No filesystem findings (policy warnings were reported)"
+			message = "No changed, missing, or untracked files (file rule warnings were reported)"
 		}
 		_, err := fmt.Fprintln(out, message)
 		return err
@@ -126,18 +126,18 @@ func printFilesStatus(out io.Writer, inventory chezmoi.InventoryResult, warnings
 		}
 		return nil
 	}
-	localHint := "Review with `chezmoi diff`; save local files with `chezmoi add` or stop tracking a deleted file " +
-		"with `chezmoi forget`. Direct `chezmoi apply` may overwrite local changes; " +
-		"dotm's guarded apply does not discard them."
+	localHint := "Review with `chezmoi diff`. Save local files to the source with `chezmoi add`, or stop tracking " +
+		"a deleted file with `chezmoi forget`. Direct `chezmoi apply` may overwrite local changes; " +
+		"dotm checks for local changes and does not discard them."
 	if err := printGroup("Local changes", localHint, local, yellow); err != nil {
 		return err
 	}
-	pendingHint := "Review desired changes with `chezmoi diff`."
+	pendingHint := "Review changes to apply with `chezmoi diff`."
 	if err := printGroup("Pending changes from chezmoi", pendingHint, pending, yellow); err != nil {
 		return err
 	}
-	unknownHint := "Acknowledge retained data with native ignores or dotm unmanaged declarations. " +
-		"To track a profile-excluded path, select its owning profile first, then use `chezmoi add`."
+	unknownHint := "To keep files without tracking them, add chezmoi ignore rules or dotm unmanaged entries. " +
+		"If a path is excluded by configuration selection, select its owning configuration before `chezmoi add`."
 	return printGroup("Untracked files", unknownHint, unknown, red)
 }
 

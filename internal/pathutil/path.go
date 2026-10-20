@@ -20,7 +20,7 @@ func Hook(value, catalogDir string) (string, error) {
 	tilde := value[0] == '~'
 	if tilde {
 		if value != "~" && !strings.HasPrefix(value, "~/") {
-			return "", fmt.Errorf("unsupported user home expansion in hook path %q", value)
+			return "", fmt.Errorf("hook path must use ~ or ~/ for home expansion")
 		}
 		var ok bool
 		home, ok = os.LookupEnv("HOME")
@@ -61,7 +61,7 @@ func Target(value string) (string, error) {
 		return "", fmt.Errorf("target path contains NUL")
 	}
 	if strings.HasPrefix(value, "~") && value != "~" && !strings.HasPrefix(value, "~/") {
-		return "", fmt.Errorf("unsupported user home expansion in target path %q", value)
+		return "", fmt.Errorf("target path must use ~ or ~/ for home expansion")
 	}
 	expanded, err := expandVariables(value, true)
 	if err != nil {

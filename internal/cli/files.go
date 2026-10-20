@@ -27,7 +27,8 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		return classifyCheckedOrHostError(err)
 	}
 	if config.Backend != "chezmoi" {
-		return checkedInputError(errors.New("selected configuration requires a configured chezmoi source"))
+		return checkedInputError(errors.New(
+			"selected configuration has no chezmoi source; set one with dotm init --repository URL"))
 	}
 	updateSource := command == "files refresh" && options.Refresh.UpdateSource
 	input, err := chezmoi.PolicyInputFor(data, config, selectionPath)
@@ -85,7 +86,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		if err = errors.Join(model.Err(), checkErr); err != nil {
 			return classifyPolicyError(err)
 		}
-		_, err = fmt.Fprintf(out, "%s\nPublication: existing policy checked; no publication performed\n",
+		_, err = fmt.Fprintf(out, "%s\nFile rules: existing policy checked; no changes saved\n",
 			colored(out, "Files policy: valid", green))
 		if err != nil {
 			return internalError(err)
@@ -113,7 +114,7 @@ func runFiles(command string, options filesCmd, dataDir string, in io.Reader, ou
 		warnings := hasFileWarnings(files) || hasFileWarnings(effective)
 		return printFilesStatus(out, inventory, warnings)
 	}
-	_, err = fmt.Fprintf(out, "%s\nPublication: refreshed and verified\n", colored(out, "Files policy: valid", green))
+	_, err = fmt.Fprintf(out, "%s\nFile rules: saved and checked\n", colored(out, "Files policy: valid", green))
 	if err != nil {
 		return internalError(err)
 	}
