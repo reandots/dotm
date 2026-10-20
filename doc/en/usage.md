@@ -2,7 +2,27 @@
 
 [Documentation](README.md) · [Русский](../ru/usage.md)
 
-Examples use the default data directory. Add `--data-dir /path/to/data` for another shared catalog. Long options use `--` and may appear before or after a command. Use `./dotm --help` or `./dotm <command> --help` for syntax.
+Examples use the default data directory. Add `--data-dir /path/to/data` for another shared catalog. Global options such as `--data-dir`, `--verbose`, and `--yes` may appear before or after a command. Use `dotm help` to browse commands, `dotm help files` for nested help, or `dotm <command> --help` for command syntax. Help is grouped compactly; examples appear with relevant commands.
+
+## Shell completion
+
+Generate a shell completion script on standard output with Cobra's built-in command. dotm does not install scripts or edit shell startup files. Use `dotm completion bash --help` (or your shell name) for setup examples:
+
+```sh
+dotm completion bash > dotm.bash
+dotm completion zsh > dotm.zsh
+dotm completion fish > dotm.fish
+dotm completion powershell > dotm.ps1
+```
+
+For a temporary Bash or Zsh session, source the generated script directly:
+
+```sh
+source <(dotm completion bash)
+source <(dotm completion zsh)
+```
+
+For persistent use, install the generated script according to the shell's completion-directory conventions and configure the shell to load it (for example, Bash's completion.d or Zsh's `$fpath` with `compinit`). Fish and PowerShell likewise use their standard completion-script locations/loading mechanisms. Consult your shell's documentation for the appropriate per-user location; dotm does not make persistent shell changes.
 
 ## Output and verbosity
 

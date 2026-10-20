@@ -1,6 +1,23 @@
 # CLI contract
 
-Assume `dotm` is already installed and available on PATH; invoke it directly as `dotm`. `dotm --help` and `dotm <command> --help` describe installed syntax. Long options use `--` and can precede/follow commands. Use the same `--data-dir /actual/shared/data` on every command when nondefault; this never relocates local selection/exclusions.
+Assume `dotm` is already installed and available on PATH; invoke it directly as `dotm`. Use `dotm help` to browse commands, `dotm help files` for nested help, and `dotm <command> --help` for command syntax. Help is compactly grouped and includes command examples. Global options such as `--data-dir`, `--verbose`, and `--yes` can precede or follow commands. Use the same `--data-dir /actual/shared/data` on every command when nondefault; this never relocates local selection/exclusions.
+
+## Shell completion
+
+Generate Cobra's stock completion script on standard output with `dotm completion bash|zsh|fish|powershell`. For example:
+
+```sh
+dotm completion bash > dotm.bash
+dotm completion zsh > dotm.zsh
+dotm completion fish > dotm.fish
+dotm completion powershell > dotm.ps1
+```
+
+For a temporary Bash or Zsh session, use `source <(dotm completion bash)` or `source <(dotm completion zsh)`. To use completion persistently, place the generated script in the shell's standard completion directory and configure loading according to that shell's documentation (e.g. Bash completion.d or Zsh `$fpath` and `compinit`; use the corresponding standard locations for Fish and PowerShell). dotm only writes the generated script to stdout and never edits shell startup files or installs it automatically.
+
+Use `dotm completion <shell> --help` for shell-specific setup examples. Help and completion generation work without manifests or backend tools. `--data-dir` and `cfg lint --source` complete directory paths.
+
+## Output and verbosity
 
 Default mutating `install`, `update`, and `remove-extras` reports show package effects observed during this invocation, not the full installed inventory. They explicitly report when no package changed; the unchanged inventory is available only with `-v` / `--verbose`. Configuration work gives one overall completion/failure summary rather than per-application success boilerplate, and names changed destination paths/source changes; unchanged successful paths and successful ignore exclusions stay in verbose details. A completed configuration cycle or hooks do not imply changed files; `update cfg` has no redundant package inventory. Status, show, list, and check commands keep their requested state/findings in default output. Warnings, failures, blockers, backups, partial effects, and actual native/hook output remain visible. Color is terminal-only and respects `NO_COLOR`; redirected output is plain.
 

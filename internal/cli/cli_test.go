@@ -58,6 +58,13 @@ func (s *CLISuite) TestAmbiguousOrUnscopedMutationRequestsAreRejected() {
 		{"negative-retention", []string{"clean", "--keep=-1"}},
 		{"cleanup-option-with-removal", []string{"remove-extras", "--gc"}},
 		{"no-operation", nil},
+		{"unexpected-operand", []string{"show", "extra"}},
+		{"unknown-nested-command", []string{"update", "unknown"}},
+		{"missing-files-command", []string{"files"}},
+		{"missing-cfg-command", []string{"cfg"}},
+		{"unknown-command", []string{"unknown"}},
+		{"unknown-shell", []string{"completion", "unknown"}},
+		{"extra-shell-operand", []string{"completion", "bash", "extra"}},
 	} {
 		s.Run(tc.name, func() {
 			args := append([]string{"--data-dir", s.dataDir}, tc.args...)
@@ -157,4 +164,73 @@ func (s *CLISuite) TestVerboseCombinedFlagsPreserveOperationOrder() {
 	s.GreaterOrEqual(update, 0)
 	s.Greater(install, update)
 	s.Greater(remove, install)
+}
+
+func (s *CLISuite) TestHelpAndCompletionDoNotNeedUserSetup() {
+	s.Require().NoError(os.RemoveAll(s.dataDir))
+	s.T().Setenv("XDG_CONFIG_HOME", "invalid-relative-path")
+	for _, args := range [][]string{
+		{"--help"},
+		{"help", "files"},
+		{"update", "--help"},
+		{"update", "cfg", "--help"},
+		{"completion", "bash"},
+		{"completion", "zsh"},
+		{"completion", "fish"},
+		{"completion", "powershell"},
+		{"__complete", "files", ""},
+	} {
+		s.Run(strings.Join(args, " "), func() {
+			var out, stderr bytes.Buffer
+			s.Require().NoError(cli.Run(args, strings.NewReader(""), &out, &stderr))
+			_, err := os.Lstat(s.stateDir)
+			s.ErrorIs(err, os.ErrNotExist)
+		})
+	}
+}
+
+func (s *CLISuite) TestCompletionOffersCommandsAndDirectoryFlags() {
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{""}, []string{"update\t", "files\t", "completion\t", ":4\n"}},
+		{[]string{"files", ""}, []string{"lint\t", "refresh\t", "status\t", ":4\n"}},
+		{[]string{"update", ""}, []string{"cfg\t", ":4\n"}},
+		{[]string{"--data-dir", ""}, []string{":16\n"}},
+		{[]string{"cfg", "lint", "--source", ""}, []string{":16\n"}},
+	} {
+		s.Run(strings.Join(tc.args, " "), func() {
+			var out bytes.Buffer
+			err := cli.Run(append([]string{"__complete"}, tc.args...), strings.NewReader(""), &out, io.Discard)
+			s.Require().NoError(err)
+			for _, want := range tc.want {
+				s.Contains(out.String(), want)
+			}
+		})
+	}
+}
+
+func (s *CLISuite) TestGlobalOptionsBeforeAndAfterNestedCommands() {
+	for _, args := range [][]string{
+		{"--data-dir", s.dataDir, "-v", "update", "cfg"},
+		{"update", "--data-dir", s.dataDir, "cfg", "-v"},
+		{"update", "cfg", "--data-dir", s.dataDir, "-v"},
+	} {
+		s.Require().NoError(cli.Run(args, strings.NewReader(""), io.Discard, io.Discard))
+	}
+}
+
+type closedWriter struct{}
+
+func (closedWriter) Write(_ []byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func (s *CLISuite) TestCompletionReturnsOutputErrors() {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		s.Run(shell, func() {
+			err := cli.Run([]string{"completion", shell}, strings.NewReader(""), closedWriter{}, io.Discard)
+			s.ErrorIs(err, io.ErrClosedPipe)
+			s.Equal(3, cli.ExitCode(err))
+		})
+	}
 }

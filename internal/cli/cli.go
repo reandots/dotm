@@ -13,68 +13,40 @@ import (
 	"dotm/internal/installed"
 	"dotm/internal/manifest"
 
-	"github.com/alecthomas/kong"
+	"github.com/spf13/cobra"
 )
 
 type cli struct {
-	DataDir         string `help:"directory containing catalog.toml and configurations.toml (default: XDG_CONFIG_HOME/dotm/data, or ~/.config/dotm/data)"`
-	Verbose         bool   `short:"v" help:"Show detailed diagnostic output"`
-	InstallMissing  bool   `name:"install" short:"i" help:"Run hooks and install missing desired applications without updating installed entries"`
-	UpdateInstalled bool   `name:"update" short:"u" help:"Run hooks, update installed desired applications and complete their dependencies"`
-	RemoveExtra     bool   `name:"remove-extras" short:"r" help:"Remove extras with individual confirmation after update/install"`
-	Yes             bool   `help:"Approve removals or cleanup without prompting; requires -r, remove-extras, or clean"`
-	// Kong requires a terminal command; this hidden default enables flag-only invocations.
-	Operations   struct{}        `cmd:"" default:"1" hidden:""`
-	Configs      configsCmd      `cmd:"" help:"List available configurations and their selected applications"`
-	Apps         appsCmd         `cmd:"" help:"List catalog applications, dependencies, packages, configuration targets and hook paths"`
-	Show         showCmd         `cmd:"" help:"Show the local selection and resolved applications, packages and owned configuration targets"`
-	Status       statusCmd       `cmd:"" help:"Inspect the Nix profile and configuration readiness from current package requirements"`
-	Init         initCmd         `cmd:"" help:"Prepare dotm files, acquire missing catalog-selected chezmoi and set up file policy without applying configurations"`
-	Doctor       doctorCmd       `cmd:"" help:"Diagnose dotm inputs, backends, host and current session without repairs"`
-	Install      installCmd      `cmd:"" help:"Run hooks and install missing applications without updating or removing installed entries"`
-	Update       updateCmd       `cmd:"" help:"Run hooks, update installed desired applications and complete dependencies; leave new applications and extras untouched"`
-	RemoveExtras removeExtrasCmd `cmd:"" help:"Remove extra applications with individual confirmation; preserve desired packages"`
-	Clean        cleanCmd        `cmd:"" help:"Prune profile history; --gc explicitly collects the shared store"`
-	Cfg          cfgCmd          `cmd:"" help:"Inspect local configuration source policy"`
-	Files        filesCmd        `cmd:"" help:"Lint or refresh effective chezmoi file policy"`
+	DataDir         string
+	Verbose         bool
+	InstallMissing  bool
+	UpdateInstalled bool
+	RemoveExtra     bool
+	Yes             bool
+	Init            initCmd
+	Clean           cleanCmd
+	Cfg             cfgCmd
+	Files           filesCmd
 }
 
-type (
-	configsCmd struct{}
-	appsCmd    struct{}
-	showCmd    struct{}
-	statusCmd  struct{}
-	doctorCmd  struct{}
-	installCmd struct{}
-	updateCmd  struct {
-		Run struct{} `cmd:"" default:"1" hidden:""`
-		Cfg struct{} `cmd:"" help:"Synchronize eligible configurations without package changes or package pre-hooks"`
-	}
-	cfgCmd struct {
-		Lint struct {
-			Source string `help:"Absolute local checkout to inspect; defaults to the shared chezmoi source"`
-		} `cmd:"" help:"Validate local source and effective chezmoi settings without downloads, execution, or writes"`
-	}
-	cleanCmd struct {
-		Keep   int  `help:"Number of highest-numbered other generations to retain in addition to the active one" default:"2"`
-		GC     bool `help:"Also collect unrooted objects throughout the shared Nix store, including objects unrelated to dotm"`
-		DryRun bool `name:"dry-run" help:"Show the cleanup plan without deleting generations or collecting objects"`
-	}
-)
+type cleanCmd struct {
+	Keep   int
+	GC     bool
+	DryRun bool
+}
+
+type cfgCmd struct {
+	Lint struct{ Source string }
+}
 
 type filesCmd struct {
-	Lint    struct{} `cmd:"" help:"Check declarations, trusted templates, and integration without persistent changes"`
-	Refresh struct {
-		UpdateSource bool `name:"update-source" help:"Acquire or update the shared checkout first (may fetch; dirty work is never discarded)"`
-	} `cmd:"" help:"Publish and verify files policy; evaluates templates, --update-source may fetch"`
-	Status struct{} `cmd:"" help:"Refresh local files policy and inspect filesystem status"`
+	Refresh struct{ UpdateSource bool }
 }
 
 type initCmd struct {
-	Configuration string `help:"Select an existing configuration, or name the empty configuration created for new manifests"`
-	Repository    string `help:"Git repository for the shared chezmoi checkout; requires approval to change existing intent"`
+	Configuration string
+	Repository    string
 }
-type removeExtrasCmd struct{}
 
 // Run executes a CLI invocation using the supplied arguments and streams.
 // It returns errors to the caller without exiting the process.
@@ -91,42 +63,31 @@ func Run(args []string, in io.Reader, out, stderr io.Writer) (resultErr error) {
 	}()
 	in = bufio.NewReader(in)
 	var app cli
-	helpRequested := false
-	parser, err := kong.New(
-		&app,
-		kong.Name("dotm"),
-		kong.Description("Use a command or combine -i, -u, and -r. "+
-			"Operations always run in update, install, remove-extras order; "+
-			"continue after configuration failures; stop after installation or internal failures. "+
-			"Failed package updates attempt to restore initial package/source state; "+
-			"incomplete recovery blocks later mutations; "+
-			"earlier operations and arbitrary hook effects are not rolled back."),
-		kong.Writers(out, stderr),
-		kong.Exit(func(code int) {
-			if code == 0 {
-				helpRequested = true
-			}
-		}),
-	)
-	if err != nil {
-		return err
-	}
-	ctx, err := parser.Parse(args)
-	if err != nil {
-		if helpRequested {
-			return nil
+	command := ""
+	root := app.command(&command)
+	root.SetArgs(args)
+	root.SetIn(in)
+	root.SetOut(out)
+	root.SetErr(stderr)
+	root.InitDefaultCompletionCmd()
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "completion" {
+			cmd.Short = "Generate a shell completion script"
+			// A runnable parent makes Cobra validate unknown shell arguments.
+			cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+			break
 		}
+	}
+	if err := root.Execute(); err != nil {
 		return err
 	}
-	if helpRequested {
+	// Help and Cobra's completion commands finish without entering application execution.
+	if command == "" {
 		return nil
 	}
 	output.verbose = app.Verbose
 	diagnostics.verbose = app.Verbose
-	command := ctx.Command()
-	if command == "update run" {
-		command = "update"
-	}
+	// Parsing and dispatch have no manifest or backend side effects.
 	hasOperations := app.InstallMissing || app.UpdateInstalled || app.RemoveExtra
 	if command == "operations" && !hasOperations {
 		return fmt.Errorf("expected a command or at least one of -i, -u, -r")

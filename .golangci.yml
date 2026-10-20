@@ -77,12 +77,6 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
-    rules:
-      # Kong help text lives in indivisible Go struct-tag literals.
-      - path: ^internal/cli/cli\.go$
-        source: '^\s*\w+\s+\w+\s+`(?:name|cmd|help):'
-        linters:
-          - lll
 
 formatters:
   enable:
