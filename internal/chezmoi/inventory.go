@@ -209,7 +209,7 @@ func Inventory(ctx context.Context, source string, policy Policy) (InventoryResu
 	if err = collect(roots); err != nil {
 		return result, err
 	}
-	if err = compactInventoryUnknown(destination, unknown, boundaries); err != nil {
+	if err = compactInventoryUnknown(destination, unknown, boundaries, managed, acks); err != nil {
 		return result, err
 	}
 	for path := range unknown {
@@ -234,7 +234,7 @@ func inventoryBoundaries(policy Policy) (map[string]bool, error) {
 		boundaries[path] = true
 	}
 	for _, declaration := range policy.Input.Files.Declarations {
-		if declaration.Field != "configs" {
+		if declaration.Field != "configs" || !declaration.Selected {
 			continue
 		}
 		for parent := filepath.Dir(declaration.Path); within(destination, parent); parent = filepath.Dir(parent) {
@@ -243,16 +243,16 @@ func inventoryBoundaries(policy Policy) (map[string]bool, error) {
 				break
 			}
 		}
-		if declaration.Selected {
-			boundaries[declaration.Path] = true
-		}
+		boundaries[declaration.Path] = true
 	}
 	return boundaries, nil
 }
 
-// Collapse only complete unknown trees. Hidden children and declaration boundaries
-// prevent a parent from representing entries with a different classification.
-func compactInventoryUnknown(destination string, unknown, boundaries map[string]bool) error {
+// Nonselected native trees group visible unknown entries despite native ignores.
+// Selected declarations, inventory roots, and dotm acknowledgements remain boundaries.
+func compactInventoryUnknown(
+	destination string, unknown, boundaries, managed map[string]bool, acks []string,
+) error {
 	candidates := make(map[string]bool)
 	for path := range unknown {
 		parent := filepath.Dir(path)
@@ -283,8 +283,9 @@ func compactInventoryUnknown(destination string, unknown, boundaries map[string]
 			return fmt.Errorf("enumerate %q: %w", path, err)
 		}
 		complete := len(children) != 0
+		groupNative := managed[path] && !hasAckBelow(path, acks)
 		for _, child := range children {
-			if !unknown[filepath.Join(path, child.Name())] {
+			if !unknown[filepath.Join(path, child.Name())] && !groupNative {
 				complete = false
 				break
 			}

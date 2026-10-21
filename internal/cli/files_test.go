@@ -99,6 +99,42 @@ func (s *FilesCLISuite) run(args ...string) (string, error) {
 	return output.String(), err
 }
 
+func (s *FilesCLISuite) TestStatusGroupsUnselectedNativeTreeWithIgnoredRuntimeFiles() {
+	s.configHome = filepath.Join(s.home, ".config")
+	for key, value := range map[string]string{
+		"XDG_CONFIG_HOME": s.configHome,
+		"XDG_DATA_HOME":   filepath.Join(s.home, ".local", "share"),
+		"XDG_STATE_HOME":  filepath.Join(s.home, ".local", "state"),
+		"XDG_CACHE_HOME":  filepath.Join(s.home, ".cache"),
+	} {
+		s.T().Setenv(key, value)
+	}
+	s.source = filepath.Join(os.Getenv("XDG_DATA_HOME"), "chezmoi")
+	s.git("clone", "--quiet", s.remote, s.source)
+	s.write(filepath.Join(s.configHome, "chezmoi", "chezmoi.toml"),
+		"sourceDir = "+strconvQuote(s.source)+"\ndestDir = "+strconvQuote(s.home)+"\n")
+	s.write(filepath.Join(s.configHome, "dotm", "config.toml"), "configuration = \"work\"\n")
+	plugin := filepath.Join("plugins", "config", "cloudmanic.herdr-plus", "projects", "example.toml")
+	for _, path := range []string{"config.toml", plugin} {
+		s.write(filepath.Join(s.source, "dot_config", "herdr", path), "setting = true\n")
+		s.write(filepath.Join(s.configHome, "herdr", path), "setting = true\n")
+	}
+	s.write(filepath.Join(s.source, "dot_config", "herdr", ".chezmoiignore"),
+		"*.log\n.plugins.lock\nplugins.json\nsessions\nsession.json\n"+
+			"session-snapshots\nsession-snapshots/**\nplugins/github\nplugins/github/**\n")
+	for _, path := range []string{
+		"herdr-server.log", ".plugins.lock", "plugins.json", "session.json",
+		"sessions/example/session.json", "session-snapshots/snapshot.json", "plugins/github/example/data",
+	} {
+		s.write(filepath.Join(s.configHome, "herdr", path), "runtime\n")
+	}
+	output, err := s.run("files", "status")
+	s.Require().NoError(err, output)
+	s.Contains(output, "  directory ~/.config/herdr\n")
+	s.NotContains(output, "~/.config/herdr/")
+	s.T().Log(output)
+}
+
 func (s *FilesCLISuite) TestRefreshRepairsStalePolicyAndLintIsReadOnly() {
 	output, err := s.run("files", "refresh")
 	s.Require().NoError(err, output)
